@@ -1,4 +1,4 @@
-# 🗺️ Mana Nak Lepak Ni
+# 🗺️ Mana Nak Jumpa Ni
 
 > Fair meetup finder for Malaysians. No more "jauh lah bro" excuses. Find the perfect midpoint and lepak there! 🇲🇾
 
