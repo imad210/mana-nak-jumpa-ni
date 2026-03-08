@@ -7,7 +7,6 @@
 [![Leaflet](https://img.shields.io/badge/Leaflet-1.9-green?logo=leaflet)](https://leafletjs.com/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-![Midpoint Malaysia Demo](https://via.placeholder.com/800x400/0a0a0a/3b82f6?text=Midpoint+Malaysia+Demo)
 
 ## ✨ Features
 
@@ -30,8 +29,8 @@
 
 1. **Clone the repository**
 ```bash
-git clone https://github.com/yourusername/jom-jumpa-tengah-tengah.git
-cd jom-jumpa-tengah-tengah
+git clone https://github.com/imad210/mana-nak-jumpa-ni.git
+cd mana-nak-jumpa-ni
 ```
 
 2. **Install dependencies**
@@ -82,7 +81,7 @@ Navigate to [http://localhost:3000](http://localhost:3000) to see the app in act
 ## 📁 Project Structure
 
 ```
-jom-jumpa-tengah-tengah/
+mana-nak-jumpa-ni/
 ├── src/
 │   ├── app/
 │   │   ├── globals.css      # Global styles & themes
@@ -147,34 +146,6 @@ Edit in `src/app/page.tsx`:
 ```typescript
 if (locations.length >= 10) return  // Change to your limit
 ```
-
-## 🌐 Deployment
-
-### Deploy to Vercel (Recommended)
-
-The easiest way to deploy is using the [Vercel Platform](https://vercel.com/new):
-
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/yourusername/jom-jumpa-tengah-tengah)
-
-Or via CLI:
-```bash
-npm install -g vercel
-vercel
-```
-
-### Manual Deployment
-
-1. **Build the project**
-```bash
-npm run build
-```
-
-2. **Start production server**
-```bash
-npm start
-```
-
-For other deployment options, check out the [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying).
 
 ## 🧪 Example Use Cases
 

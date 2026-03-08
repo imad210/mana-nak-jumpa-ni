@@ -42,3 +42,6 @@ next-env.d.ts
 
 # leftover init subfolder
 /midpoint-app
+
+.vercel
+.env*.local
