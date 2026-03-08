@@ -1,0 +1,32 @@
+# Implementation Plan - Midpoint Malaysia
+
+A web application that allows users to input up to 10 locations in Malaysia and finds the geographic midpoint between them to suggest a fair meeting spot.
+
+## Proposed Changes
+
+### Core Infrastructure
+- **Framework**: Next.js (App Router)
+- **Mapping**: Leaflet with `react-leaflet`
+- **Geocoding**: OpenStreetMap Nominatim API (filtered for Malaysia)
+- **Styling**: Vanilla CSS with modern aesthetics (Glassmorphism, CSS Variables)
+- **Animations**: Framer Motion for smooth transitions
+
+### Components
+- `MapContainer`: Handles Leaflet initialization, markers, and polyline drawing.
+- `LocationPanel`: Sidebar for adding/removing up to 10 Malaysian localities.
+- `MidpointResult`: Displays the calculated midpoint and distance statistics.
+
+### Layout & Design
+- **Google Maps Style**: Full-screen map with floating interface elements.
+- **Premium Aesthetics**: Dark/Light mode support, blurred backgrounds (glass), and vibrant accents.
+- **Responsiveness**: Mobile-friendly drawer for location input.
+
+## Verification Plan
+
+### Automated Tests
+- N/A for initial prototype, will rely on manual visual verification.
+
+### Manual Verification
+1. Insert "Putrajaya" and "Kuala Lumpur" -> Verify midpoint is somewhere around Serdang/Puchong.
+2. Insert 10 different locations from various states (e.g., Penang, JB, Kuching) -> Verify all pinpoints appear and lines connect to midpoint.
+3. Test location search for small towns (e.g., "Kuala Pilah", "Baling") to ensure locality knowledge.

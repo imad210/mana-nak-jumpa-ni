@@ -1,0 +1,110 @@
+@import "tailwindcss";
+
+/* ── Base colour tokens ─────────────────────────────────────────────────── */
+:root {
+  --background: #0a0a0a;
+  --foreground: #ededed;
+  --glass-bg: rgba(255, 255, 255, 0.05);
+  --glass-border: rgba(255, 255, 255, 0.1);
+}
+
+body {
+  color: var(--foreground);
+  background: var(--background);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+    sans-serif;
+  overflow: hidden;
+}
+
+/* ── Glassmorphism utility (dark) ───────────────────────────────────────── */
+.glass {
+  background: var(--glass-bg);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid var(--glass-border);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+}
+
+/* ── Custom scrollbar ───────────────────────────────────────────────────── */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 4px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+/* ── Leaflet — dark mode ────────────────────────────────────────────────── */
+.leaflet-container {
+  background: #0a0a0a !important;
+  height: 100% !important;
+}
+
+.leaflet-bar {
+  border: none !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4) !important;
+}
+
+.leaflet-bar a {
+  background-color: rgba(20, 20, 20, 0.92) !important;
+  color: #ededed !important;
+  border-bottom-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+.leaflet-bar a:hover {
+  background-color: rgba(40, 40, 40, 0.95) !important;
+}
+
+.leaflet-popup-content-wrapper,
+.leaflet-popup-tip {
+  background: rgba(15, 15, 15, 0.92) !important;
+  backdrop-filter: blur(12px);
+  color: #ededed !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5) !important;
+}
+
+.leaflet-popup-close-button {
+  color: #ededed !important;
+}
+
+.leaflet-attribution-flag {
+  display: none !important;
+}
+
+/* ── Leaflet — light mode overrides ─────────────────────────────────────── */
+.leaflet-light .leaflet-container {
+  background: #f1f5f9 !important;
+}
+
+.leaflet-light .leaflet-bar a {
+  background-color: rgba(255, 255, 255, 0.96) !important;
+  color: #334155 !important;
+  border-bottom-color: rgba(0, 0, 0, 0.08) !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1) !important;
+}
+
+.leaflet-light .leaflet-bar a:hover {
+  background-color: #f8fafc !important;
+}
+
+.leaflet-light .leaflet-popup-content-wrapper,
+.leaflet-light .leaflet-popup-tip {
+  background: rgba(255, 255, 255, 0.96) !important;
+  color: #0f172a !important;
+  border: 1px solid rgba(0, 0, 0, 0.1) !important;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.12) !important;
+}
+
+.leaflet-light .leaflet-popup-close-button {
+  color: #64748b !important;
+}

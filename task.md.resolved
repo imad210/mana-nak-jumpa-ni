@@ -1,0 +1,17 @@
+# Tasks
+
+- [x] Project Initialization
+    - [x] Initialize Next.js app 
+    - [x] Install dependencies (leaflet, react-leaflet, lucide-react, framer-motion)
+- [x] Core Logic Implementation
+    - [x] Setup Map component with Leaflet
+    - [x] Implement geocoding for Malaysian localities
+    - [x] Implement midpoint calculation logic
+- [ ] UI/UX Design [/]
+    - [x] Create sidebar for location management (max 10)
+    - [x] Implement premium dark mode/glassmorphism styling
+    - [ ] Add animations for line drawing and markers [/]
+- [ ] Verification and Polish [ ]
+    - [ ] Test with various Malaysian locations
+    - [ ] Optimize for mobile responsiveness
+    - [ ] Final visual polish
