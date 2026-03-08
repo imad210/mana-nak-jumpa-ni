@@ -129,7 +129,7 @@ export default function Home() {
             <Navigation className="w-6 h-6" />
           </div>
           <div className="flex-1">
-            <h1 className={`text-xl font-bold tracking-tight ${titleText}`}>Mana nak lepak ni?</h1>
+            <h1 className={`text-xl font-bold tracking-tight ${titleText}`}>Mana nak jumpa ni?</h1>
             <p className={`text-xs ${subtitleText}`}>Find fair meeting spots for everyone</p>
           </div>
           {/* Theme Toggle */}
@@ -233,7 +233,7 @@ export default function Home() {
               </div>
               <div>
                 <span className={midpointTagText}>Optimal Midpoint</span>
-                <h3 className={midpointHeading}>Lepak sini jom</h3>
+                <h3 className={midpointHeading}>Jumpa sini jom</h3>
               </div>
             </div>
             <p className={midpointDesc}>
@@ -263,8 +263,8 @@ export default function Home() {
                       animate={{ opacity: 1, scale: 1 }}
                       transition={{ delay: i * 0.07 }}
                       className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border transition-all cursor-default ${isDark
-                          ? 'bg-white/8 border-white/10 text-zinc-200 hover:bg-white/15'
-                          : 'bg-slate-100 border-slate-200 text-slate-600 hover:bg-slate-200'
+                        ? 'bg-white/8 border-white/10 text-zinc-200 hover:bg-white/15'
+                        : 'bg-slate-100 border-slate-200 text-slate-600 hover:bg-slate-200'
                         }`}
                       title={`~${place.distanceKm.toFixed(1)} km from midpoint`}
                     >
