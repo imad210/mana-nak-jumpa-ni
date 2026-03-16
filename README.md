@@ -81,6 +81,55 @@ npm run lint
 npm test
 ```
 
+## Docker
+
+This repo now includes a production-ready Docker setup for the Next.js server runtime.
+
+Files:
+
+- `Dockerfile`: multi-stage production image using Next.js standalone output
+- `.dockerignore`: keeps the build context small and avoids leaking local-only files
+- `docker-compose.yml`: local production-style container run
+- `.github/workflows/docker-publish.yml`: CI workflow that verifies the app, then builds and pushes an image to GHCR
+
+### Build locally
+
+```bash
+docker build -t midpoint-malaysia:local .
+```
+
+### Run locally with Docker
+
+```bash
+docker compose up --build
+```
+
+The app will be available at [http://localhost:3000](http://localhost:3000).
+
+## GitHub Actions and GHCR
+
+The workflow publishes a container image to:
+
+```txt
+ghcr.io/<your-github-username-or-org>/midpoint-malaysia
+```
+
+What the workflow does:
+
+- runs `npm ci`
+- runs `npm run lint`
+- runs `npm test`
+- runs `npm run build`
+- builds the Docker image
+- pushes the image to GHCR on pushes to `main`
+
+
+### Example image pull
+
+```bash
+docker pull ghcr.io/<your-github-username-or-org>/midpoint-malaysia:latest
+```
+
 ## Environment Variables
 
 Optional environment variables used by the routing and geocoding layers:
@@ -102,3 +151,4 @@ NOMINATIM_CACHE_TTL_MS=300000
 - The road-based midpoint is a heuristic for 3+ places, not a mathematically exact global optimum.
 - Road-based travel time is road-network aware but not real-time traffic aware.
 - Nearby suggestions are locality-style labels from reverse geocoding, not venue search.
+- GitHub Actions plus GHCR handles build and image publishing, but you still need a server or container platform to run the image continuously.

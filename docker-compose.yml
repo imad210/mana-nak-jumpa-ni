@@ -1,0 +1,18 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: midpoint-malaysia:local
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      OSRM_BASE_URL: ${OSRM_BASE_URL:-https://router.project-osrm.org}
+      OSRM_CACHE_TTL_MS: ${OSRM_CACHE_TTL_MS:-300000}
+      OSRM_TIMEOUT_MS: ${OSRM_TIMEOUT_MS:-8000}
+      NOMINATIM_USER_AGENT: ${NOMINATIM_USER_AGENT:-Midpoint-Malaysia/1.0 (+https://github.com/imad210/mana-nak-jumpa-ni)}
+      NOMINATIM_EMAIL: ${NOMINATIM_EMAIL:-you@example.com}
+      NOMINATIM_MIN_INTERVAL_MS: ${NOMINATIM_MIN_INTERVAL_MS:-1100}
+      NOMINATIM_CACHE_TTL_MS: ${NOMINATIM_CACHE_TTL_MS:-300000}
