@@ -27,8 +27,6 @@ Fair meetup finder for Malaysians. Add a few places, compare a simple geographic
 - Returns highlighted route paths together with the midpoint response so the UI can draw road lines with fewer round trips.
 - Reuses the same route geometry for the `2 places` case, which helps road-based lines appear faster.
 
-Full calculation notes live in [ALGORITHM.md](./ALGORITHM.md).
-
 ## Tech Stack
 
 - `Next.js 16` with the App Router
