@@ -8,9 +8,10 @@ Fair meetup finder for Malaysians. Add a few places, compare a simple geographic
 - Add 2-10 places and visualize them on a Leaflet map.
 - Switch between two midpoint modes:
   - `Geographic`: average latitude and longitude of all selected places.
-  - `Road-based`: use OSRM road data to compute a fairer midpoint based on travel time.
+  - `Road-based`: use OSRM road data to compute a fairer midpoint based on estimated travel time.
 - Show nearby locality suggestions around the active midpoint.
-- Draw road routes for road-based mode and straight connectors for geographic mode.
+- Draw highlighted road routes for road-based mode and straight connectors for geographic mode.
+- Show per-place travel time and road distance in road-based mode.
 
 ## Midpoint Modes
 
@@ -23,6 +24,8 @@ Fair meetup finder for Malaysians. Add a few places, compare a simple geographic
 - Uses OSRM road-network data.
 - For exactly 2 places, finds the exact 50/50 midpoint by travel time along the route.
 - For 3 or more places, samples candidate points around the geographic seed and selects the fairest one by minimizing the longest travel time first, then total travel time as a tiebreaker.
+- Returns highlighted route paths together with the midpoint response so the UI can draw road lines with fewer round trips.
+- Reuses the same route geometry for the `2 places` case, which helps road-based lines appear faster.
 
 Full calculation notes live in [ALGORITHM.md](./ALGORITHM.md).
 
@@ -44,11 +47,10 @@ Full calculation notes live in [ALGORITHM.md](./ALGORITHM.md).
 - `src/components/Map.tsx`: Leaflet map, markers, straight connectors, and road route overlays
 - `src/app/api/search/route.ts`: proxied Nominatim search
 - `src/app/api/reverse/route.ts`: proxied Nominatim reverse geocoding
-- `src/app/api/midpoint/routing/route.ts`: road-based midpoint API
-- `src/app/api/routes/road/route.ts`: highlighted road route API
+- `src/app/api/midpoint/routing/route.ts`: road-based midpoint API that returns midpoint data and highlighted road routes in one response
 - `src/lib/utils.ts`: shared types, geographic midpoint, client-side fetch helpers
-- `src/lib/routing-midpoint.ts`: road midpoint scoring and fairness logic
-- `src/lib/osrm.ts`: OSRM helpers, route details, matrix fetches, and caching
+- `src/lib/routing-midpoint.ts`: road midpoint scoring, fairness logic, and special-case `2 places` route splitting
+- `src/lib/osrm.ts`: OSRM helpers, route details, matrix fetches, simplified route geometry, and caching
 
 ## Getting Started
 
@@ -100,9 +102,5 @@ NOMINATIM_CACHE_TTL_MS=300000
 - Search and reverse suggestions are Malaysia-focused.
 - Public OSRM and public Nominatim are fine for development and low traffic, but not ideal for heavy production usage.
 - The road-based midpoint is a heuristic for 3+ places, not a mathematically exact global optimum.
+- Road-based travel time is road-network aware but not real-time traffic aware.
 - Nearby suggestions are locality-style labels from reverse geocoding, not venue search.
-
-## Documentation
-
-- [CONTEXT.md](./CONTEXT.md): project context for collaborators and future agents
-- [ALGORITHM.md](./ALGORITHM.md): detailed explanation of geographic and road-based midpoint calculations

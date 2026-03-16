@@ -117,7 +117,7 @@ interface OsrmRouteResponse {
 async function getOsrmRouteResponse(origin: CoordinateLike, destination: CoordinateLike, withAnnotations: boolean) {
   const query = withAnnotations
     ? 'overview=full&geometries=geojson&annotations=distance,duration&steps=false'
-    : 'overview=full&geometries=geojson'
+    : 'overview=simplified&geometries=geojson'
 
   return fetchOsrmJson<OsrmRouteResponse>(
     `/route/v1/driving/${origin.lng},${origin.lat};${destination.lng},${destination.lat}?${query}`,

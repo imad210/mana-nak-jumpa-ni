@@ -3,7 +3,8 @@ import {
   haversineKm,
   type Location,
   type MidpointComputation,
-  type MidpointMetrics
+  type MidpointMetrics,
+  type RoutePath
 } from './utils'
 
 export interface CoordinateLike {
@@ -33,6 +34,10 @@ export interface RoutingCandidateSelection {
   candidate: CoordinateLike;
   metrics: MidpointMetrics;
   maxDurationSec: number;
+}
+
+export interface RoutingMidpointResult extends MidpointComputation {
+  routePaths?: RoutePath[];
 }
 
 const EARTH_RADIUS_KM = 6371
@@ -66,6 +71,37 @@ function buildMetrics(perLocationDurationSec: number[], perLocationDistanceKm: n
     perLocationDurationSec,
     perLocationDistanceKm
   }
+}
+
+function coordinatesMatch(a: [number, number], b: CoordinateLike) {
+  return a[0] === b.lat && a[1] === b.lng
+}
+
+function buildTwoPointRoutePaths(
+  route: RoutingRouteDetails,
+  midpoint: CoordinateLike,
+  segmentIndex: number
+): RoutePath[] {
+  const firstPath = route.coordinates.slice(0, segmentIndex + 1)
+  if (!coordinatesMatch(firstPath[firstPath.length - 1], midpoint)) {
+    firstPath.push([midpoint.lat, midpoint.lng])
+  }
+
+  const secondPath = route.coordinates.slice(segmentIndex + 1).reverse()
+  if (secondPath.length === 0 || !coordinatesMatch(secondPath[secondPath.length - 1], midpoint)) {
+    secondPath.push([midpoint.lat, midpoint.lng])
+  }
+
+  return [
+    {
+      originIndex: 0,
+      coordinates: firstPath
+    },
+    {
+      originIndex: 1,
+      coordinates: secondPath
+    }
+  ]
 }
 
 export function validateRoutingLocationsPayload(payload: unknown): Location[] | null {
@@ -216,7 +252,7 @@ export function selectBestRoutingCandidate(
 export async function computeExactTwoPointRoutingMidpoint(
   locations: [Location, Location],
   provider: RoutingProvider
-): Promise<MidpointComputation> {
+): Promise<RoutingMidpointResult> {
   const route = await provider.getRouteDetails(locations[0], locations[1])
 
   if (route.coordinates.length < 2 || route.segmentDurationsSec.length === 0 || route.segmentDistancesM.length === 0) {
@@ -232,6 +268,7 @@ export async function computeExactTwoPointRoutingMidpoint(
   let midpoint: CoordinateLike | null = null
   let distanceToMidpointM = 0
   let durationToMidpointSec = 0
+  let midpointSegmentIndex = -1
 
   for (let index = 0; index < route.segmentDurationsSec.length; index += 1) {
     const segmentDurationSec = route.segmentDurationsSec[index]
@@ -245,6 +282,7 @@ export async function computeExactTwoPointRoutingMidpoint(
       midpoint = interpolateCoordinate(route.coordinates[index], route.coordinates[index + 1], clampedRatio)
       durationToMidpointSec = cumulativeDurationSec + segmentDurationSec * clampedRatio
       distanceToMidpointM = cumulativeDistanceM + segmentDistanceM * clampedRatio
+      midpointSegmentIndex = index
       break
     }
 
@@ -266,14 +304,15 @@ export async function computeExactTwoPointRoutingMidpoint(
       lat: midpoint.lat,
       lng: midpoint.lng
     },
-    metrics: buildMetrics(perLocationDurationSec, perLocationDistanceKm)
+    metrics: buildMetrics(perLocationDurationSec, perLocationDistanceKm),
+    routePaths: buildTwoPointRoutePaths(route, midpoint, midpointSegmentIndex)
   }
 }
 
 export async function computeRoutingMidpoint(
   locations: Location[],
   provider: RoutingProvider
-): Promise<MidpointComputation> {
+): Promise<RoutingMidpointResult> {
   if (locations.length < 2) {
     return createRoutingFallback(locations, 'Road-based midpoint needs at least 2 locations. Showing geographic midpoint instead.')
   }

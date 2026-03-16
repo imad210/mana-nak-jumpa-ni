@@ -102,6 +102,21 @@ describe('routing midpoint helpers', () => {
     expect(result.metrics?.perLocationDurationSec[1]).toBeCloseTo(450, 6)
     expect(result.metrics?.perLocationDistanceKm[0]).toBeCloseTo(15, 6)
     expect(result.metrics?.perLocationDistanceKm[1]).toBeCloseTo(21, 6)
+    expect(result.routePaths).toHaveLength(2)
+    expect(result.routePaths?.[0]?.originIndex).toBe(0)
+    expect(result.routePaths?.[1]?.originIndex).toBe(1)
+    expect(result.routePaths?.[0]?.coordinates.slice(0, 2)).toEqual([
+      [3.0, 101.0],
+      [3.1, 101.1]
+    ])
+    expect(result.routePaths?.[1]?.coordinates.slice(0, 2)).toEqual([
+      [3.3, 101.3],
+      [3.2, 101.2]
+    ])
+    expect(result.routePaths?.[0]?.coordinates[2]?.[0]).toBeCloseTo(3.15, 6)
+    expect(result.routePaths?.[0]?.coordinates[2]?.[1]).toBeCloseTo(101.15, 6)
+    expect(result.routePaths?.[1]?.coordinates[2]?.[0]).toBeCloseTo(3.15, 6)
+    expect(result.routePaths?.[1]?.coordinates[2]?.[1]).toBeCloseTo(101.15, 6)
   })
 
   it('falls back to geographic midpoint when provider fails', async () => {

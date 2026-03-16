@@ -33,6 +33,11 @@ export interface RoutePath {
   coordinates: Array<[number, number]>;
 }
 
+export interface RoutingMidpointResponse {
+  midpoint: MidpointComputation;
+  routePaths: RoutePath[];
+}
+
 interface SearchApiResult {
   display_name: string;
   lat: string;
@@ -82,7 +87,7 @@ export async function searchLocation(query: string): Promise<Location[]> {
   }
 }
 
-export async function getRoutingMidpoint(locations: Location[]): Promise<MidpointComputation> {
+export async function getRoutingMidpoint(locations: Location[]): Promise<RoutingMidpointResponse> {
   const res = await fetch('/api/midpoint/routing', {
     method: 'POST',
     headers: {
@@ -95,23 +100,7 @@ export async function getRoutingMidpoint(locations: Location[]): Promise<Midpoin
     throw new Error(`Routing midpoint request failed with ${res.status}`)
   }
 
-  return res.json() as Promise<MidpointComputation>
-}
-
-export async function getRoadRoutes(locations: Location[], midpoint: Location): Promise<RoutePath[]> {
-  const res = await fetch('/api/routes/road', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({ locations, midpoint })
-  })
-
-  if (!res.ok) {
-    throw new Error(`Road routes request failed with ${res.status}`)
-  }
-
-  return res.json() as Promise<RoutePath[]>
+  return res.json() as Promise<RoutingMidpointResponse>
 }
 
 export function calculateMidpoint(locations: Location[]): Location {

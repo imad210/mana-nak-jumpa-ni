@@ -24,8 +24,7 @@ import {
   searchLocation,
   calculateMidpoint,
   getNearbyLocalities,
-  getRoutingMidpoint,
-  getRoadRoutes
+  getRoutingMidpoint
 } from '@/lib/utils'
 
 const Map = dynamic(() => import('@/components/Map'), {
@@ -127,12 +126,16 @@ export default function Home() {
       try {
         const result = await getRoutingMidpoint(locations)
         if (!cancelled) {
-          setRoutingMidpoint(result)
-          setRoutingMidpointError(result.fallbackToGeographic ? (result.reason ?? 'Road-based midpoint unavailable.') : null)
+          setRoutingMidpoint(result.midpoint)
+          setRoutePaths(result.routePaths)
+          setRoutingMidpointError(
+            result.midpoint.fallbackToGeographic ? (result.midpoint.reason ?? 'Road-based midpoint unavailable.') : null
+          )
         }
       } catch (error) {
         if (!cancelled) {
           console.error('routing midpoint error:', error)
+          setRoutePaths([])
           setRoutingMidpoint({
             mode: 'routing',
             point: geographicMidpoint ?? calculateMidpoint(locations),
@@ -179,42 +182,6 @@ export default function Home() {
     routingMetrics.perLocationDistanceKm.length === locations.length
   const showRoutingMetrics = midpointMode === 'routing' && !routingMidpoint?.fallbackToGeographic && hasCompleteRoutingMetrics
   const primaryNearbyPlace = nearbyPlaces[0]?.name
-
-  useEffect(() => {
-    if (
-      midpointMode !== 'routing' ||
-      !midpoint ||
-      routingMidpoint?.fallbackToGeographic ||
-      !routingMidpoint?.metrics ||
-      locations.length < 2
-    ) {
-      setRoutePaths([])
-      return
-    }
-
-    const activeMidpoint = midpoint
-    let cancelled = false
-
-    async function loadRoutePaths() {
-      try {
-        const paths = await getRoadRoutes(locations, activeMidpoint)
-        if (!cancelled) {
-          setRoutePaths(paths)
-        }
-      } catch (error) {
-        if (!cancelled) {
-          console.error('road route highlight error:', error)
-          setRoutePaths([])
-        }
-      }
-    }
-
-    void loadRoutePaths()
-
-    return () => {
-      cancelled = true
-    }
-  }, [midpointMode, locations, midpoint, routingMidpoint])
 
   useEffect(() => {
     if (midpointLat == null || midpointLng == null) {
