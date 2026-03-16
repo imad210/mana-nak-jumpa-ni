@@ -20,6 +20,10 @@ const createIcon = (color: string) =>
 const blueIcon = createIcon('blue')
 const goldIcon = createIcon('gold')
 const malaysiaCenter: L.LatLngExpression = [DEFAULT_CENTER_LOCATION.lat, DEFAULT_CENTER_LOCATION.lng]
+const malaysiaBounds = L.latLngBounds(
+  L.latLng(0.8, 98.0),
+  L.latLng(7.6, 119.8)
+)
 const attribution = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>'
 
 interface MapProps {
@@ -61,10 +65,17 @@ export default function Map({ locations, midpoint, midpointMode, routePaths, isD
     overlayLayerRef.current = overlayLayer
 
     const resizeObserver = new ResizeObserver(() => {
-      map.invalidateSize()
+      map.invalidateSize({
+        pan: false,
+        animate: false
+      })
     })
 
     resizeObserver.observe(containerRef.current)
+    map.fitBounds(malaysiaBounds, {
+      padding: [32, 32],
+      maxZoom: 6
+    })
 
     return () => {
       resizeObserver.disconnect()
@@ -149,11 +160,17 @@ export default function Map({ locations, midpoint, midpointMode, routePaths, isD
     } else if (midpoint) {
       map.setView([midpoint.lat, midpoint.lng], 11)
     } else {
-      map.setView(malaysiaCenter, 6)
+      map.fitBounds(malaysiaBounds, {
+        padding: [32, 32],
+        maxZoom: 6
+      })
     }
 
     requestAnimationFrame(() => {
-      map.invalidateSize()
+      map.invalidateSize({
+        pan: false,
+        animate: false
+      })
     })
   }, [locations, midpoint, midpointMode, routePaths])
 

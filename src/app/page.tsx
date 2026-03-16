@@ -78,7 +78,7 @@ export default function Home() {
   const [isSearching, setIsSearching] = useState(false)
   const [searchResults, setSearchResults] = useState<Location[]>([])
   const [isDark, setIsDark] = useState(true)
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(true)
   const [midpointMode, setMidpointMode] = useState<MidpointMode>('geographic')
   const [routingMidpoint, setRoutingMidpoint] = useState<MidpointComputation | null>(null)
   const [isRoutingMidpointLoading, setIsRoutingMidpointLoading] = useState(false)
@@ -556,8 +556,8 @@ export default function Home() {
 
   return (
     <main className={main}>
-      <div className="w-full md:w-auto md:flex-none md:shrink-0">
-        <div className={`md:hidden border-b backdrop-blur-md ${sidebarShell}`}>
+      <div className={`absolute inset-x-0 top-0 z-30 md:hidden ${sidebarShell}`}>
+        <div className={`border-b backdrop-blur-md ${sidebarShell}`}>
           <div className="flex items-center gap-3 p-4">
             <div className="p-2 rounded-xl bg-blue-500/20 text-blue-400 shrink-0">
               <Navigation className="w-6 h-6" />
@@ -600,69 +600,69 @@ export default function Home() {
             )}
           </AnimatePresence>
         </div>
+      </div>
 
-        <motion.div
-          animate={{ width: isSidebarCollapsed ? 96 : 384 }}
-          transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
-          className={`relative hidden h-full md:block border-r backdrop-blur-md overflow-hidden ${sidebarShell}`}
-        >
-          <div className="relative flex h-full w-full">
-            <div className={`flex h-full w-24 shrink-0 flex-col items-center justify-between border-r p-4 ${isDark ? 'border-white/10 bg-black/10' : 'border-slate-200 bg-white/30'}`}>
-              <div className="flex flex-col items-center gap-4">
-                <div className="p-2 rounded-xl bg-blue-500/20 text-blue-400">
-                  <Navigation className="w-6 h-6" />
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => setIsSidebarCollapsed((collapsed) => !collapsed)}
-                  className={toggleBtnClass}
-                  title={isSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-                >
-                  {isSidebarCollapsed ? <PanelLeftOpen className="w-4 h-4" /> : <PanelLeftClose className="w-4 h-4" />}
-                </button>
-
-                <div className={`h-px w-10 ${railDivider}`} />
-
-                <div className={railBadge} title="Saved locations">
-                  <Users className="w-4 h-4" />
-                </div>
-
-                <div className={railBadge} title={`${locations.length} locations`}>
-                  <span className="text-xs font-semibold">{locations.length}</span>
-                </div>
-
-                {midpoint && (
-                  <div className={railBadge} title={`${midpointModeLabel} available`}>
-                    <MapPin className="w-4 h-4 text-amber-400" />
-                  </div>
-                )}
+      <motion.div
+        animate={{ width: isSidebarCollapsed ? 96 : 384 }}
+        transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
+        className={`absolute inset-y-0 left-0 z-20 hidden border-r backdrop-blur-md overflow-hidden md:block ${sidebarShell}`}
+      >
+        <div className="relative flex h-full w-full">
+          <div className={`flex h-full w-24 shrink-0 flex-col items-center justify-between border-r p-4 ${isDark ? 'border-white/10 bg-black/10' : 'border-slate-200 bg-white/30'}`}>
+            <div className="flex flex-col items-center gap-4">
+              <div className="p-2 rounded-xl bg-blue-500/20 text-blue-400">
+                <Navigation className="w-6 h-6" />
               </div>
 
               <button
                 type="button"
-                onClick={() => setIsDark((d) => !d)}
+                onClick={() => setIsSidebarCollapsed((collapsed) => !collapsed)}
                 className={toggleBtnClass}
-                title={isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+                title={isSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
               >
-                {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+                {isSidebarCollapsed ? <PanelLeftOpen className="w-4 h-4" /> : <PanelLeftClose className="w-4 h-4" />}
               </button>
+
+              <div className={`h-px w-10 ${railDivider}`} />
+
+              <div className={railBadge} title="Saved locations">
+                <Users className="w-4 h-4" />
+              </div>
+
+              <div className={railBadge} title={`${locations.length} locations`}>
+                <span className="text-xs font-semibold">{locations.length}</span>
+              </div>
+
+              {midpoint && (
+                <div className={railBadge} title={`${midpointModeLabel} available`}>
+                  <MapPin className="w-4 h-4 text-amber-400" />
+                </div>
+              )}
             </div>
 
-            <motion.div
-              animate={{ width: isSidebarCollapsed ? 0 : 288, opacity: isSidebarCollapsed ? 0 : 1 }}
-              transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
-              className="h-full overflow-hidden"
+            <button
+              type="button"
+              onClick={() => setIsDark((d) => !d)}
+              className={toggleBtnClass}
+              title={isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
             >
-              <div className="flex h-full w-72 flex-col gap-5 overflow-y-auto custom-scrollbar p-6">
-                {sidebarContent}
-              </div>
-            </motion.div>
+              {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+            </button>
           </div>
-        </motion.div>
-      </div>
 
-      <div className="flex-1 min-w-0 h-full relative">
+          <motion.div
+            animate={{ width: isSidebarCollapsed ? 0 : 288, opacity: isSidebarCollapsed ? 0 : 1 }}
+            transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+            className="h-full overflow-hidden"
+          >
+            <div className="flex h-full w-72 flex-col gap-5 overflow-y-auto custom-scrollbar p-6">
+              {sidebarContent}
+            </div>
+          </motion.div>
+        </div>
+      </motion.div>
+
+      <div className="absolute inset-0 z-0 h-full w-full">
         <Map
           key={isDark ? 'map-dark' : 'map-light'}
           locations={locations}
