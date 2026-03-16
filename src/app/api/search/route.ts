@@ -1,23 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { fetchNominatimJson } from '@/lib/nominatim'
 
 export async function GET(request: NextRequest) {
-    const { searchParams } = new URL(request.url)
-    const q = searchParams.get('q')
-    if (!q) return NextResponse.json([])
+  const { searchParams } = new URL(request.url)
+  const q = searchParams.get('q')?.trim()
 
-    const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q + ', Malaysia')}&limit=5&addressdetails=1&countrycodes=MY`
+  if (!q) {
+    return NextResponse.json([])
+  }
 
-    try {
-        const res = await fetch(url, {
-            headers: {
-                'User-Agent': 'Midpoint-Malaysia-App/1.0 (contact@midpoint.my)',
-                'Accept-Language': 'en'
-            }
-        })
-        const data = await res.json()
-        return NextResponse.json(data)
-    } catch (err) {
-        console.error('[/api/search] error:', err)
-        return NextResponse.json([], { status: 500 })
-    }
+  const params = new URLSearchParams({
+    q: `${q}, Malaysia`,
+    limit: '5',
+    countrycodes: 'MY'
+  })
+
+  try {
+    const data = await fetchNominatimJson<unknown[]>('/search', params)
+    return NextResponse.json(data)
+  } catch (err) {
+    console.error('[/api/search] error:', err)
+    return NextResponse.json([], { status: 502 })
+  }
 }

@@ -6,27 +6,29 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "eslint .",
+    "test": "vitest run --pool threads"
   },
   "dependencies": {
-    "react": "^18",
-    "react-dom": "^18",
-    "next": "15.1.4",
+    "framer-motion": "^12.35.1",
     "leaflet": "^1.9.4",
-    "react-leaflet": "^4.2.1",
     "leaflet-defaulticon-compatibility": "^0.1.2",
-    "framer-motion": "^11.0.0",
-    "lucide-react": "^0.263.1"
+    "lucide-react": "^0.577.0",
+    "next": "16.1.6",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "react-leaflet": "^5.0.0"
   },
   "devDependencies": {
-    "typescript": "^5",
+    "@tailwindcss/postcss": "^4",
+    "@types/leaflet": "^1.9.21",
     "@types/node": "^20",
-    "@types/react": "^18",
-    "@types/react-dom": "^18",
-    "@types/leaflet": "^1.9.8",
-    "postcss": "^8",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.1.6",
     "tailwindcss": "^4.0.0",
-    "eslint": "^8",
-    "eslint-config-next": "15.1.4"
+    "typescript": "^5",
+    "vitest": "^4.1.0"
   }
 }
