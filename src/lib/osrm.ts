@@ -2,8 +2,14 @@ import type { CoordinateLike, RoutingRouteDetails, RoutingTableResult } from './
 import type { Location } from './utils'
 
 const OSRM_BASE_URL = (process.env.OSRM_BASE_URL ?? 'https://router.project-osrm.org').replace(/\/$/, '')
-const OSRM_CACHE_TTL_MS = Number(process.env.OSRM_CACHE_TTL_MS ?? '300000')
-const OSRM_TIMEOUT_MS = Number(process.env.OSRM_TIMEOUT_MS ?? '8000')
+function getPositiveConfigNumber(value: string | undefined, fallback: number) {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
+}
+
+const OSRM_CACHE_TTL_MS = getPositiveConfigNumber(process.env.OSRM_CACHE_TTL_MS, 300000)
+const OSRM_TIMEOUT_MS = getPositiveConfigNumber(process.env.OSRM_TIMEOUT_MS, 8000)
+const OSRM_CACHE_MAX_ENTRIES = Math.floor(getPositiveConfigNumber(process.env.OSRM_CACHE_MAX_ENTRIES, 500))
 
 const responseCache = new Map<string, { expiresAt: number; data: unknown }>()
 
@@ -50,8 +56,21 @@ function getCachedValue<T>(key: string) {
 }
 
 function setCachedValue(key: string, data: unknown) {
+  const now = Date.now()
+  for (const [cachedKey, value] of responseCache) {
+    if (value.expiresAt <= now) {
+      responseCache.delete(cachedKey)
+    }
+  }
+
+  while (responseCache.size >= OSRM_CACHE_MAX_ENTRIES) {
+    const oldestKey = responseCache.keys().next().value as string | undefined
+    if (!oldestKey) break
+    responseCache.delete(oldestKey)
+  }
+
   responseCache.set(key, {
-    expiresAt: Date.now() + OSRM_CACHE_TTL_MS,
+    expiresAt: now + OSRM_CACHE_TTL_MS,
     data
   })
 }
@@ -90,6 +109,9 @@ interface OsrmTableResponse {
   code: string;
   distances?: Array<Array<number | null>>;
   durations?: Array<Array<number | null>>;
+  destinations?: Array<{
+    location?: [number, number];
+  }>;
 }
 
 interface OsrmNearestResponse {
@@ -138,13 +160,26 @@ export async function getOsrmTable(origins: Location[], destinations: Coordinate
     buildTableCacheKey(origins, destinations)
   )
 
-  if (data.code !== 'Ok' || !data.durations || !data.distances) {
+  const snappedDestinations = data.destinations?.map((destination) => destination.location)
+
+  if (
+    data.code !== 'Ok' ||
+    !data.durations ||
+    !data.distances ||
+    !snappedDestinations ||
+    snappedDestinations.length !== destinations.length ||
+    snappedDestinations.some((location) => !location)
+  ) {
     throw new Error('OSRM table response was incomplete')
   }
 
   return {
     durations: data.durations,
-    distances: data.distances
+    distances: data.distances,
+    destinations: snappedDestinations.map((location) => ({
+      lng: location![0],
+      lat: location![1]
+    }))
   }
 }
 

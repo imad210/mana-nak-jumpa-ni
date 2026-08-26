@@ -3,8 +3,10 @@ import { calculateMidpoint, type Location } from './utils'
 import {
   computeExactTwoPointRoutingMidpoint,
   computeRoutingMidpoint,
+  generateBroadRoutingCandidates,
   generateRoutingCandidates,
   getRoutingCandidateRadiusKm,
+  getRoutingRefinementRadiusKm,
   selectBestRoutingCandidate,
   validateRoutingMidpointRequestBody,
   type RoutingProvider,
@@ -19,7 +21,6 @@ const locations: Location[] = [
 
 const baseProvider: RoutingProvider = {
   getTable: async () => ({ durations: [], distances: [] }),
-  getNearest: async (point) => point,
   getRouteDetails: async () => ({
     coordinates: [
       [3.0, 101.0],
@@ -49,6 +50,22 @@ describe('routing midpoint helpers', () => {
     expect(candidates[0]).toEqual(seed)
   })
 
+  it('generates 37 deterministic broad candidates across three rings', () => {
+    const seed = calculateMidpoint(locations)
+    const candidates = generateBroadRoutingCandidates(seed, 12)
+
+    expect(candidates).toHaveLength(37)
+    expect(candidates[0]).toEqual(seed)
+    expect(candidates[1]).not.toEqual(candidates[13])
+    expect(candidates[13]).not.toEqual(candidates[25])
+  })
+
+  it('clamps the refinement radius', () => {
+    expect(getRoutingRefinementRadiusKm(1)).toBe(0.75)
+    expect(getRoutingRefinementRadiusKm(12)).toBe(3)
+    expect(getRoutingRefinementRadiusKm(100)).toBe(5)
+  })
+
   it('selects the candidate that minimizes the longest traveler first', () => {
     const candidates = [
       { lat: 3, lng: 101 },
@@ -74,6 +91,46 @@ describe('routing midpoint helpers', () => {
     expect(selection?.index).toBe(2)
     expect(selection?.maxDurationSec).toBe(500)
     expect(selection?.metrics.totalDurationSec).toBe(1450)
+  })
+
+  it('uses total duration when maximum durations are within tolerance', () => {
+    const candidates = [
+      { lat: 3, lng: 101 },
+      { lat: 3.1, lng: 101.1 }
+    ]
+    const table: RoutingTableResult = {
+      durations: [
+        [500, 480],
+        [450, 300],
+        [450, 300]
+      ],
+      distances: [
+        [10000, 9000],
+        [10000, 8000],
+        [10000, 8000]
+      ]
+    }
+
+    expect(selectBestRoutingCandidate(candidates, table)?.index).toBe(1)
+  })
+
+  it('rejects candidates with incomplete or negative provider metrics', () => {
+    const candidates = [
+      { lat: 3, lng: 101 },
+      { lat: 3.1, lng: 101.1 }
+    ]
+    const table: RoutingTableResult = {
+      durations: [
+        [100, -1],
+        [null, 100]
+      ],
+      distances: [
+        [1000, 1000],
+        [1000, 1000]
+      ]
+    }
+
+    expect(selectBestRoutingCandidate(candidates, table, 2)).toBeNull()
   })
 
   it('computes an exact 50/50 midpoint across a two-place route', async () => {
@@ -124,7 +181,6 @@ describe('routing midpoint helpers', () => {
       getTable: async () => {
         throw new Error('OSRM unavailable')
       },
-      getNearest: async () => ({ lat: 0, lng: 0 }),
       getRouteDetails: async () => {
         throw new Error('OSRM unavailable')
       }
@@ -138,10 +194,68 @@ describe('routing midpoint helpers', () => {
     expect(result.metrics).toBeUndefined()
   })
 
+  it('runs broad and refinement searches and returns the table-snapped winner', async () => {
+    const candidateCounts: number[] = []
+    const result = await computeRoutingMidpoint(locations, {
+      ...baseProvider,
+      getTable: async (origins, candidates) => {
+        candidateCounts.push(candidates.length)
+        return {
+          durations: origins.map(() => candidates.map(() => 600)),
+          distances: origins.map(() => candidates.map(() => 10000)),
+          destinations: candidates.map((candidate) => ({
+            lat: candidate.lat + 0.0001,
+            lng: candidate.lng + 0.0001
+          }))
+        }
+      }
+    })
+
+    expect(candidateCounts).toEqual([37, 13])
+    expect(result.routingSearch).toMatchObject({
+      strategy: 'multi-ring-refinement',
+      stage1CandidateCount: 37,
+      stage1ValidCandidateCount: 37,
+      stage2CandidateCount: 13,
+      stage2ValidCandidateCount: 13,
+      stage2Completed: true
+    })
+    expect(result.point.lat).toBeCloseTo(calculateMidpoint(locations).lat + 0.0002, 6)
+    expect(result.metrics?.maximumDurationSec).toBe(600)
+    expect(result.metrics?.durationSpreadSec).toBe(0)
+  })
+
+  it('keeps the broad winner when refinement fails', async () => {
+    let tableCall = 0
+    const result = await computeRoutingMidpoint(locations, {
+      ...baseProvider,
+      getTable: async (origins, candidates) => {
+        tableCall += 1
+        if (tableCall === 2) throw new Error('refinement unavailable')
+        return {
+          durations: origins.map(() => candidates.map(() => 600)),
+          distances: origins.map(() => candidates.map(() => 10000)),
+          destinations: candidates
+        }
+      }
+    })
+
+    expect(result.fallbackToGeographic).not.toBe(true)
+    expect(result.routingSearch?.stage2Completed).toBe(false)
+    expect(result.routingSearch?.stage2ValidCandidateCount).toBe(0)
+    const geographic = calculateMidpoint(locations)
+    expect(result.point.lat).toBeCloseTo(geographic.lat, 6)
+    expect(result.point.lng).toBeCloseTo(geographic.lng, 6)
+  })
+
   it('rejects invalid request payloads safely', () => {
     expect(validateRoutingMidpointRequestBody({})).toBeNull()
     expect(validateRoutingMidpointRequestBody({ locations: 'bad' })).toBeNull()
     expect(validateRoutingMidpointRequestBody({ locations: [{ name: 'KL', lat: '3.1', lng: 101.6 }] })).toBeNull()
+    expect(validateRoutingMidpointRequestBody({ locations: [] })).toBeNull()
+    expect(validateRoutingMidpointRequestBody({ locations: [locations[0]] })).toBeNull()
+    expect(validateRoutingMidpointRequestBody({ locations: [locations[0], { ...locations[0], name: 'Duplicate' }] })).toBeNull()
+    expect(validateRoutingMidpointRequestBody({ locations: [locations[0], { name: 'Invalid', lat: 100, lng: 101 }] })).toBeNull()
     expect(validateRoutingMidpointRequestBody({ locations })).toEqual(locations)
   })
 })

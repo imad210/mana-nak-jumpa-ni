@@ -12,6 +12,7 @@ Fair meetup finder for Malaysians. Add a few places, compare a simple geographic
 - Show nearby locality suggestions around the active midpoint.
 - Draw highlighted road routes for road-based mode and straight connectors for geographic mode.
 - Show per-place travel time and road distance in road-based mode.
+- Expose the planning workflow to compatible browser agents through five in-page WebMCP tools.
 
 ## Midpoint Modes
 
@@ -22,10 +23,23 @@ Fair meetup finder for Malaysians. Add a few places, compare a simple geographic
 
 ### Road-based midpoint
 - Uses OSRM road-network data.
-- For exactly 2 places, finds the exact 50/50 midpoint by travel time along the route.
-- For 3 or more places, samples candidate points around the geographic seed and selects the fairest one by minimizing the longest travel time first, then total travel time as a tiebreaker.
+- For exactly 2 places, finds the half-duration point along the directed route from the first place to the second. This is not an equality guarantee for both directions on an asymmetric road network.
+- For 3 or more places, evaluates 37 deterministic broad candidates over three rings, then 13 candidates around the broad winner. It minimizes the longest journey first and total journey time second, with deterministic tolerances.
+- Uses the snapped destination returned by the winning OSRM table evaluation consistently for metrics, display, and final route geometry.
 - Returns highlighted route paths together with the midpoint response so the UI can draw road lines with fewer round trips.
 - Reuses the same route geometry for the `2 places` case, which helps road-based lines appear faster.
+
+## WebMCP Agent Tools
+
+In browsers that expose `document.modelContext`, the client registers these tools:
+
+- `search_locations`: resolve Malaysia-focused place names without changing the map.
+- `set_participants`: replace the visible participant set with 2-10 validated locations.
+- `get_current_plan`: inspect the current participants, selected mode, midpoint, and revision.
+- `compare_midpoint_modes`: compare geographic and road-based results without applying a mode.
+- `apply_meetup_plan`: apply a selected mode to the visible map, guarded by state revision.
+
+WebMCP is progressive enhancement. The normal search, map, and midpoint controls continue to work when the browser does not support agent tools. See [the WebMCP tool specification](./docs/WEBMCP_TOOL_SPEC.md) and [technical architecture](./docs/ARCHITECTURE.md).
 
 ## Tech Stack
 
@@ -49,6 +63,9 @@ Fair meetup finder for Malaysians. Add a few places, compare a simple geographic
 - `src/lib/utils.ts`: shared types, geographic midpoint, client-side fetch helpers
 - `src/lib/routing-midpoint.ts`: road midpoint scoring, fairness logic, and special-case `2 places` route splitting
 - `src/lib/osrm.ts`: OSRM helpers, route details, matrix fetches, simplified route geometry, and caching
+- `src/lib/meetup-planner.ts`: concise state snapshots and geographic/routing comparison results
+- `src/lib/webmcp.ts`: WebMCP schemas, validation, registration, and structured results
+- `src/types/webmcp.d.ts`: minimal browser API declarations for progressive enhancement
 
 ## Getting Started
 
@@ -88,6 +105,7 @@ Optional environment variables used by the routing and geocoding layers:
 ```bash
 OSRM_BASE_URL=https://router.project-osrm.org
 OSRM_CACHE_TTL_MS=300000
+OSRM_CACHE_MAX_ENTRIES=500
 OSRM_TIMEOUT_MS=8000
 NOMINATIM_USER_AGENT=Midpoint-Malaysia/1.0 (+https://github.com/imad210/mana-nak-jumpa-ni)
 NOMINATIM_EMAIL=you@example.com
@@ -102,3 +120,8 @@ NOMINATIM_CACHE_TTL_MS=300000
 - The road-based midpoint is a heuristic for 3+ places, not a mathematically exact global optimum.
 - Road-based travel time is road-network aware but not real-time traffic aware.
 - Nearby suggestions are locality-style labels from reverse geocoding, not venue search.
+- Public deployment, an OSI-compatible repository license, and testing in a WebMCP-compatible browser are separate submission-readiness steps.
+
+## Documentation
+
+The submission documentation starts at [docs/README.md](./docs/README.md). The implemented algorithm and its trade-offs are specified in [docs/ALGORITHM.md](./docs/ALGORITHM.md).

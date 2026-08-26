@@ -46,6 +46,5 @@ next-env.d.ts
 .vercel
 .env*.local
 
-# local collaborator context
-CONTEXT.md
-ALGORITHM.md
+# docs
+/docs

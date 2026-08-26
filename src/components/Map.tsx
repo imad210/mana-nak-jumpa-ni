@@ -26,6 +26,16 @@ const malaysiaBounds = L.latLngBounds(
 )
 const attribution = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>'
 
+function escapeHtml(value: string) {
+  return value.replace(/[&<>'"]/g, (character) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    "'": '&#39;',
+    '"': '&quot;'
+  })[character] ?? character)
+}
+
 interface MapProps {
   locations: Location[]
   midpoint: Location | null
@@ -101,13 +111,13 @@ export default function Map({ locations, midpoint, midpointMode, routePaths, isD
       boundsPoints.push(position)
 
       L.marker(position, { icon: blueIcon })
-        .bindPopup(`<div class="font-semibold">${loc.name.split(',')[0]}</div><div class="text-xs opacity-60">Location ${idx + 1}</div>`)
+        .bindPopup(`<div class="font-semibold">${escapeHtml(loc.name.split(',')[0])}</div><div class="text-xs opacity-60">Location ${idx + 1}</div>`)
         .addTo(overlayLayer)
     })
 
     if (midpoint) {
       const midpointTitle = midpointMode === 'routing' ? 'Road-based Midpoint' : 'Geographic Midpoint'
-      const midpointSubtitle = midpointMode === 'routing' ? 'Optimized using road travel time.' : 'Calculated from average coordinates.'
+      const midpointSubtitle = midpointMode === 'routing' ? 'Calculated using road travel data.' : 'Calculated from average coordinates.'
       const midpointPosition: L.LatLngTuple = [midpoint.lat, midpoint.lng]
 
       boundsPoints.push(midpointPosition)

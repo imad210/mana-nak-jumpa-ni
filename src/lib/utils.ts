@@ -18,12 +18,27 @@ export interface MidpointMetrics {
   totalDistanceKm: number;
   perLocationDurationSec: number[];
   perLocationDistanceKm: number[];
+  maximumDurationSec: number;
+  minimumDurationSec: number;
+  durationSpreadSec: number;
+}
+
+export interface RoutingSearchMetadata {
+  strategy: 'directed-route-half-duration' | 'multi-ring-refinement';
+  stage1CandidateCount: number;
+  stage1ValidCandidateCount: number;
+  stage2CandidateCount: number;
+  stage2ValidCandidateCount: number;
+  stage2Completed: boolean;
+  baseRadiusKm?: number;
+  refinementRadiusKm?: number;
 }
 
 export interface MidpointComputation {
   mode: MidpointMode;
   point: Location;
   metrics?: MidpointMetrics;
+  routingSearch?: RoutingSearchMetadata;
   fallbackToGeographic?: boolean;
   reason?: string;
 }
@@ -36,6 +51,7 @@ export interface RoutePath {
 export interface RoutingMidpointResponse {
   midpoint: MidpointComputation;
   routePaths: RoutePath[];
+  routePathWarning?: string;
 }
 
 interface SearchApiResult {

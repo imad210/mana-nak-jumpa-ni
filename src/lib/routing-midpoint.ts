@@ -4,6 +4,7 @@ import {
   type Location,
   type MidpointComputation,
   type MidpointMetrics,
+  type RoutingSearchMetadata,
   type RoutePath
 } from './utils'
 
@@ -15,6 +16,7 @@ export interface CoordinateLike {
 export interface RoutingTableResult {
   durations: Array<Array<number | null>>;
   distances: Array<Array<number | null>>;
+  destinations?: CoordinateLike[];
 }
 
 export interface RoutingRouteDetails {
@@ -25,7 +27,6 @@ export interface RoutingRouteDetails {
 
 export interface RoutingProvider {
   getTable(origins: Location[], destinations: CoordinateLike[]): Promise<RoutingTableResult>;
-  getNearest(point: CoordinateLike): Promise<CoordinateLike>;
   getRouteDetails(origin: Location, destination: Location): Promise<RoutingRouteDetails>;
 }
 
@@ -34,6 +35,7 @@ export interface RoutingCandidateSelection {
   candidate: CoordinateLike;
   metrics: MidpointMetrics;
   maxDurationSec: number;
+  validCandidateCount: number;
 }
 
 export interface RoutingMidpointResult extends MidpointComputation {
@@ -44,6 +46,13 @@ const EARTH_RADIUS_KM = 6371
 const MIN_RING_RADIUS_KM = 3
 const MAX_RING_RADIUS_KM = 20
 const RING_RADIUS_FACTOR = 0.35
+const BROAD_RING_FACTORS = [0.33, 0.66, 1] as const
+const RING_BEARING_STEP_DEG = 30
+const REFINEMENT_RADIUS_FACTOR = 0.25
+const MIN_REFINEMENT_RADIUS_KM = 0.75
+const MAX_REFINEMENT_RADIUS_KM = 5
+const FAIRNESS_TOLERANCE_SEC = 30
+const TOTAL_TIME_TOLERANCE_SEC = 30
 const DEFAULT_FALLBACK_REASON = 'Road-based midpoint unavailable. Showing geographic midpoint instead.'
 
 function clamp(value: number, min: number, max: number) {
@@ -64,12 +73,17 @@ function interpolateCoordinate(start: [number, number], end: [number, number], r
 function buildMetrics(perLocationDurationSec: number[], perLocationDistanceKm: number[]): MidpointMetrics {
   const totalDurationSec = perLocationDurationSec.reduce((sum, value) => sum + value, 0)
   const totalDistanceKm = perLocationDistanceKm.reduce((sum, value) => sum + value, 0)
+  const maximumDurationSec = Math.max(...perLocationDurationSec)
+  const minimumDurationSec = Math.min(...perLocationDurationSec)
 
   return {
     totalDurationSec,
     totalDistanceKm,
     perLocationDurationSec,
-    perLocationDistanceKm
+    perLocationDistanceKm,
+    maximumDurationSec,
+    minimumDurationSec,
+    durationSpreadSec: maximumDurationSec - minimumDurationSec
   }
 }
 
@@ -105,11 +119,12 @@ function buildTwoPointRoutePaths(
 }
 
 export function validateRoutingLocationsPayload(payload: unknown): Location[] | null {
-  if (!Array.isArray(payload)) {
+  if (!Array.isArray(payload) || payload.length < 2 || payload.length > 10) {
     return null
   }
 
   const locations: Location[] = []
+  const coordinateKeys = new Set<string>()
 
   for (const item of payload) {
     if (!item || typeof item !== 'object') {
@@ -118,9 +133,25 @@ export function validateRoutingLocationsPayload(payload: unknown): Location[] | 
 
     const { name, lat, lng } = item as Record<string, unknown>
 
-    if (typeof name !== 'string' || !name.trim() || !isFiniteCoordinate(lat) || !isFiniteCoordinate(lng)) {
+    if (
+      typeof name !== 'string' ||
+      !name.trim() ||
+      name.trim().length > 160 ||
+      !isFiniteCoordinate(lat) ||
+      !isFiniteCoordinate(lng) ||
+      lat < -90 ||
+      lat > 90 ||
+      lng < -180 ||
+      lng > 180
+    ) {
       return null
     }
+
+    const coordinateKey = `${lat.toFixed(6)},${lng.toFixed(6)}`
+    if (coordinateKeys.has(coordinateKey)) {
+      return null
+    }
+    coordinateKeys.add(coordinateKey)
 
     locations.push({
       name: name.trim(),
@@ -185,29 +216,54 @@ export function offsetCoordinate(point: CoordinateLike, distanceKm: number, bear
 export function generateRoutingCandidates(seed: CoordinateLike, radiusKm: number): CoordinateLike[] {
   const candidates: CoordinateLike[] = [seed]
 
-  for (let bearing = 0; bearing < 360; bearing += 30) {
+  for (let bearing = 0; bearing < 360; bearing += RING_BEARING_STEP_DEG) {
     candidates.push(offsetCoordinate(seed, radiusKm, bearing))
   }
 
   return candidates
 }
 
+export function generateBroadRoutingCandidates(seed: CoordinateLike, baseRadiusKm: number): CoordinateLike[] {
+  const candidates: CoordinateLike[] = [seed]
+
+  for (const radiusFactor of BROAD_RING_FACTORS) {
+    const radiusKm = baseRadiusKm * radiusFactor
+    for (let bearing = 0; bearing < 360; bearing += RING_BEARING_STEP_DEG) {
+      candidates.push(offsetCoordinate(seed, radiusKm, bearing))
+    }
+  }
+
+  return candidates
+}
+
+export function getRoutingRefinementRadiusKm(baseRadiusKm: number) {
+  return clamp(baseRadiusKm * REFINEMENT_RADIUS_FACTOR, MIN_REFINEMENT_RADIUS_KM, MAX_REFINEMENT_RADIUS_KM)
+}
+
 export function selectBestRoutingCandidate(
   candidates: CoordinateLike[],
-  table: RoutingTableResult
+  table: RoutingTableResult,
+  expectedSourceCount = table.durations.length
 ): RoutingCandidateSelection | null {
-  if (table.durations.length === 0 || candidates.length === 0) {
+  if (
+    expectedSourceCount <= 0 ||
+    candidates.length === 0 ||
+    table.durations.length !== expectedSourceCount ||
+    table.distances.length !== expectedSourceCount ||
+    (table.destinations != null && table.destinations.length !== candidates.length)
+  ) {
     return null
   }
 
   let bestSelection: RoutingCandidateSelection | null = null
+  let validCandidateCount = 0
 
   for (let candidateIndex = 0; candidateIndex < candidates.length; candidateIndex += 1) {
     const perLocationDurationSec: number[] = []
     const perLocationDistanceKm: number[] = []
     let isValidCandidate = true
 
-    for (let sourceIndex = 0; sourceIndex < table.durations.length; sourceIndex += 1) {
+    for (let sourceIndex = 0; sourceIndex < expectedSourceCount; sourceIndex += 1) {
       const durationSec = table.durations[sourceIndex]?.[candidateIndex] ?? null
       const distanceMeters = table.distances[sourceIndex]?.[candidateIndex] ?? null
 
@@ -215,7 +271,9 @@ export function selectBestRoutingCandidate(
         durationSec == null ||
         distanceMeters == null ||
         !Number.isFinite(durationSec) ||
-        !Number.isFinite(distanceMeters)
+        !Number.isFinite(distanceMeters) ||
+        durationSec < 0 ||
+        distanceMeters < 0
       ) {
         isValidCandidate = false
         break
@@ -229,21 +287,39 @@ export function selectBestRoutingCandidate(
       continue
     }
 
+    const snappedCandidate = table.destinations?.[candidateIndex] ?? candidates[candidateIndex]
+    if (!isFiniteCoordinate(snappedCandidate?.lat) || !isFiniteCoordinate(snappedCandidate?.lng)) {
+      continue
+    }
+
+    validCandidateCount += 1
     const metrics = buildMetrics(perLocationDurationSec, perLocationDistanceKm)
-    const maxDurationSec = Math.max(...perLocationDurationSec)
+    const maxDurationSec = metrics.maximumDurationSec
+    const maxDifference = bestSelection ? maxDurationSec - bestSelection.maxDurationSec : Number.NEGATIVE_INFINITY
+    const totalDifference = bestSelection
+      ? metrics.totalDurationSec - bestSelection.metrics.totalDurationSec
+      : Number.NEGATIVE_INFINITY
+    const isClearlyFairer = maxDifference < -FAIRNESS_TOLERANCE_SEC
+    const isFairnessTie = Math.abs(maxDifference) <= FAIRNESS_TOLERANCE_SEC
+    const isClearlyLowerTotal = totalDifference < -TOTAL_TIME_TOLERANCE_SEC
 
     if (
       !bestSelection ||
-      maxDurationSec < bestSelection.maxDurationSec ||
-      (maxDurationSec === bestSelection.maxDurationSec && metrics.totalDurationSec < bestSelection.metrics.totalDurationSec)
+      isClearlyFairer ||
+      (isFairnessTie && isClearlyLowerTotal)
     ) {
       bestSelection = {
         index: candidateIndex,
-        candidate: candidates[candidateIndex],
+        candidate: snappedCandidate,
         metrics,
-        maxDurationSec
+        maxDurationSec,
+        validCandidateCount
       }
     }
+  }
+
+  if (bestSelection) {
+    bestSelection.validCandidateCount = validCandidateCount
   }
 
   return bestSelection
@@ -255,7 +331,13 @@ export async function computeExactTwoPointRoutingMidpoint(
 ): Promise<RoutingMidpointResult> {
   const route = await provider.getRouteDetails(locations[0], locations[1])
 
-  if (route.coordinates.length < 2 || route.segmentDurationsSec.length === 0 || route.segmentDistancesM.length === 0) {
+  if (
+    route.coordinates.length < 2 ||
+    route.segmentDurationsSec.length !== route.coordinates.length - 1 ||
+    route.segmentDistancesM.length !== route.coordinates.length - 1 ||
+    route.segmentDurationsSec.some((value) => !Number.isFinite(value) || value < 0) ||
+    route.segmentDistancesM.some((value) => !Number.isFinite(value) || value < 0)
+  ) {
     return createRoutingFallback(locations)
   }
 
@@ -305,6 +387,14 @@ export async function computeExactTwoPointRoutingMidpoint(
       lng: midpoint.lng
     },
     metrics: buildMetrics(perLocationDurationSec, perLocationDistanceKm),
+    routingSearch: {
+      strategy: 'directed-route-half-duration',
+      stage1CandidateCount: 1,
+      stage1ValidCandidateCount: 1,
+      stage2CandidateCount: 0,
+      stage2ValidCandidateCount: 0,
+      stage2Completed: false
+    },
     routePaths: buildTwoPointRoutePaths(route, midpoint, midpointSegmentIndex)
   }
 }
@@ -323,25 +413,54 @@ export async function computeRoutingMidpoint(
     }
 
     const seed = calculateMidpoint(locations)
-    const radiusKm = getRoutingCandidateRadiusKm(seed, locations)
-    const candidates = generateRoutingCandidates(seed, radiusKm)
-    const table = await provider.getTable(locations, candidates)
-    const selection = selectBestRoutingCandidate(candidates, table)
+    const baseRadiusKm = getRoutingCandidateRadiusKm(seed, locations)
+    const broadCandidates = generateBroadRoutingCandidates(seed, baseRadiusKm)
+    const broadTable = await provider.getTable(locations, broadCandidates)
+    const broadSelection = selectBestRoutingCandidate(broadCandidates, broadTable, locations.length)
 
-    if (!selection) {
+    if (!broadSelection) {
       return createRoutingFallback(locations)
     }
 
-    const snappedPoint = await provider.getNearest(selection.candidate)
+    const refinementRadiusKm = getRoutingRefinementRadiusKm(baseRadiusKm)
+    const refinementCandidates = generateRoutingCandidates(broadSelection.candidate, refinementRadiusKm)
+    let finalSelection = broadSelection
+    let stage2ValidCandidateCount = 0
+    let stage2Completed = false
+
+    try {
+      const refinementTable = await provider.getTable(locations, refinementCandidates)
+      const refinementSelection = selectBestRoutingCandidate(refinementCandidates, refinementTable, locations.length)
+
+      if (refinementSelection) {
+        finalSelection = refinementSelection
+        stage2ValidCandidateCount = refinementSelection.validCandidateCount
+        stage2Completed = true
+      }
+    } catch (error) {
+      console.warn('[routing-midpoint] refinement failed; keeping broad winner:', error)
+    }
+
+    const routingSearch: RoutingSearchMetadata = {
+      strategy: 'multi-ring-refinement',
+      stage1CandidateCount: broadCandidates.length,
+      stage1ValidCandidateCount: broadSelection.validCandidateCount,
+      stage2CandidateCount: refinementCandidates.length,
+      stage2ValidCandidateCount,
+      stage2Completed,
+      baseRadiusKm,
+      refinementRadiusKm
+    }
 
     return {
       mode: 'routing',
       point: {
         name: 'Road-based Midpoint',
-        lat: snappedPoint.lat,
-        lng: snappedPoint.lng
+        lat: finalSelection.candidate.lat,
+        lng: finalSelection.candidate.lng
       },
-      metrics: selection.metrics
+      metrics: finalSelection.metrics,
+      routingSearch
     }
   } catch (error) {
     console.error('[routing-midpoint] failed to compute routing midpoint:', error)

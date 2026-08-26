@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import dynamic from 'next/dynamic'
 import {
   Search,
@@ -12,7 +12,10 @@ import {
   Sun,
   Moon,
   PanelLeftClose,
-  PanelLeftOpen
+  PanelLeftOpen,
+  Bot,
+  ExternalLink,
+  CheckCircle2
 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
@@ -26,6 +29,8 @@ import {
   getNearbyLocalities,
   getRoutingMidpoint
 } from '@/lib/utils'
+import { buildMidpointComparison, buildPlanSnapshot, getLocationsKey } from '@/lib/meetup-planner'
+import { registerMeetupTools, WebMcpActionError, type WebMcpActions } from '@/lib/webmcp'
 
 const Map = dynamic(() => import('@/components/Map'), {
   ssr: false,
@@ -79,6 +84,7 @@ export default function Home() {
   const [searchResults, setSearchResults] = useState<Location[]>([])
   const [isDark, setIsDark] = useState(true)
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(true)
+  const [isMcpGuideOpen, setIsMcpGuideOpen] = useState(false)
   const [midpointMode, setMidpointMode] = useState<MidpointMode>('geographic')
   const [routingMidpoint, setRoutingMidpoint] = useState<MidpointComputation | null>(null)
   const [isRoutingMidpointLoading, setIsRoutingMidpointLoading] = useState(false)
@@ -86,18 +92,95 @@ export default function Home() {
   const [routePaths, setRoutePaths] = useState<RoutePath[]>([])
   const [nearbyPlaces, setNearbyPlaces] = useState<NearbyPlace[]>([])
   const [isFetchingNearby, setIsFetchingNearby] = useState(false)
+  const [isWebMcpReady, setIsWebMcpReady] = useState(false)
+  const locationsRef = useRef<Location[]>([])
+  const midpointModeRef = useRef<MidpointMode>('geographic')
+  const routingMidpointRef = useRef<MidpointComputation | null>(null)
+  const nearbyPlacesRef = useRef<NearbyPlace[]>([])
+  const revisionRef = useRef(0)
+  const routingCacheRef = useRef<{
+    locationsKey: string
+    midpoint: MidpointComputation
+    routePaths: RoutePath[]
+    routePathWarning?: string
+  } | null>(null)
 
   const geographicMidpoint = useMemo(() => {
     if (locations.length < 2) return null
     return calculateMidpoint(locations)
   }, [locations])
 
-  const locationsKey = useMemo(
-    () => locations.map((location) => `${location.name}:${location.lat.toFixed(5)},${location.lng.toFixed(5)}`).join('|'),
-    [locations]
-  )
+  const locationsKey = useMemo(() => getLocationsKey(locations), [locations])
+
+  const clearRoutingState = useCallback(() => {
+    routingMidpointRef.current = null
+    routingCacheRef.current = null
+    setRoutingMidpoint(null)
+    setRoutingMidpointError(null)
+    setIsRoutingMidpointLoading(false)
+    setRoutePaths([])
+    nearbyPlacesRef.current = []
+    setNearbyPlaces([])
+  }, [])
+
+  const updateLocations = useCallback((nextLocations: Location[], resetToGeographic = false) => {
+    const normalizedLocations = nextLocations.map((location) => ({ ...location }))
+    locationsRef.current = normalizedLocations
+    setLocations(normalizedLocations)
+    revisionRef.current += 1
+    clearRoutingState()
+
+    if (resetToGeographic) {
+      midpointModeRef.current = 'geographic'
+      setMidpointMode('geographic')
+    }
+
+    return {
+      participantCount: normalizedLocations.length,
+      participants: normalizedLocations,
+      status: normalizedLocations.length >= 2 ? 'ready' : 'empty'
+    }
+  }, [clearRoutingState])
+
+  const selectMidpointMode = useCallback((mode: MidpointMode) => {
+    if (midpointModeRef.current !== mode) {
+      midpointModeRef.current = mode
+      setMidpointMode(mode)
+      revisionRef.current += 1
+      nearbyPlacesRef.current = []
+      setNearbyPlaces([])
+    }
+
+    if (mode === 'geographic') {
+      setRoutePaths([])
+    }
+  }, [])
+
+  const loadRoutingResult = useCallback(async (requestedLocations: Location[]) => {
+    const requestedKey = getLocationsKey(requestedLocations)
+    const cached = routingCacheRef.current
+    if (cached?.locationsKey === requestedKey) {
+      return cached
+    }
+
+    const result = await getRoutingMidpoint(requestedLocations)
+    if (getLocationsKey(locationsRef.current) !== requestedKey) {
+      throw new WebMcpActionError('comparison_superseded', 'Participants changed while the midpoint was being calculated.', true)
+    }
+
+    const nextCache = {
+      locationsKey: requestedKey,
+      midpoint: result.midpoint,
+      routePaths: result.routePaths,
+      ...(result.routePathWarning ? { routePathWarning: result.routePathWarning } : {})
+    }
+    routingCacheRef.current = nextCache
+    return nextCache
+  }, [])
 
   useEffect(() => {
+    routingMidpointRef.current = null
+    routingCacheRef.current = null
     setRoutingMidpoint(null)
     setRoutingMidpointError(null)
     setIsRoutingMidpointLoading(false)
@@ -124,24 +207,29 @@ export default function Home() {
       setRoutingMidpointError(null)
 
       try {
-        const result = await getRoutingMidpoint(locations)
+        const result = await loadRoutingResult(locations)
         if (!cancelled) {
+          routingMidpointRef.current = result.midpoint
           setRoutingMidpoint(result.midpoint)
           setRoutePaths(result.routePaths)
           setRoutingMidpointError(
-            result.midpoint.fallbackToGeographic ? (result.midpoint.reason ?? 'Road-based midpoint unavailable.') : null
+            result.midpoint.fallbackToGeographic
+              ? (result.midpoint.reason ?? 'Road-based midpoint unavailable.')
+              : (result.routePathWarning ?? null)
           )
         }
       } catch (error) {
         if (!cancelled) {
           console.error('routing midpoint error:', error)
           setRoutePaths([])
-          setRoutingMidpoint({
+          const fallback: MidpointComputation = {
             mode: 'routing',
             point: geographicMidpoint ?? calculateMidpoint(locations),
             fallbackToGeographic: true,
             reason: 'Road-based midpoint unavailable. Showing geographic midpoint instead.'
-          })
+          }
+          routingMidpointRef.current = fallback
+          setRoutingMidpoint(fallback)
           setRoutingMidpointError('Road-based midpoint unavailable. Showing geographic midpoint instead.')
         }
       } finally {
@@ -156,7 +244,7 @@ export default function Home() {
     return () => {
       cancelled = true
     }
-  }, [midpointMode, locations, geographicMidpoint])
+  }, [midpointMode, locations, geographicMidpoint, loadRoutingResult])
 
   const activeMidpointComputation = useMemo<MidpointComputation | null>(() => {
     if (!geographicMidpoint) {
@@ -177,6 +265,7 @@ export default function Home() {
   const midpointLat = midpoint?.lat
   const midpointLng = midpoint?.lng
   const routingMetrics = midpointMode === 'routing' ? routingMidpoint?.metrics : undefined
+  const routingSearch = midpointMode === 'routing' ? routingMidpoint?.routingSearch : undefined
   const hasCompleteRoutingMetrics = !!routingMetrics &&
     routingMetrics.perLocationDurationSec.length === locations.length &&
     routingMetrics.perLocationDistanceKm.length === locations.length
@@ -185,6 +274,7 @@ export default function Home() {
 
   useEffect(() => {
     if (midpointLat == null || midpointLng == null) {
+      nearbyPlacesRef.current = []
       setNearbyPlaces([])
       setIsFetchingNearby(false)
       return
@@ -201,6 +291,7 @@ export default function Home() {
       try {
         const places = await getNearbyLocalities(lat, lng)
         if (!cancelled) {
+          nearbyPlacesRef.current = places
           setNearbyPlaces(places)
         }
       } finally {
@@ -227,15 +318,113 @@ export default function Home() {
   }
 
   const addLocation = (loc: Location) => {
-    if (locations.length >= 10) return
-    setLocations([...locations, loc])
+    if (locationsRef.current.length >= 10) return
+    if (locationsRef.current.some((location) => location.lat === loc.lat && location.lng === loc.lng)) return
+    updateLocations([...locationsRef.current, loc])
     setSearchQuery('')
     setSearchResults([])
   }
 
   const removeLocation = (index: number) => {
-    setLocations(locations.filter((_, i) => i !== index))
+    updateLocations(locationsRef.current.filter((_, i) => i !== index))
   }
+
+  const getCurrentPlan = useCallback(() => buildPlanSnapshot({
+    revision: revisionRef.current,
+    locations: locationsRef.current,
+    selectedMode: midpointModeRef.current,
+    routingResult: routingMidpointRef.current,
+    nearbyPlaces: nearbyPlacesRef.current
+  }), [])
+
+  const compareMidpointModes = useCallback(async () => {
+    const currentLocations = locationsRef.current.map((location) => ({ ...location }))
+    if (currentLocations.length < 2) {
+      throw new WebMcpActionError('participants_required', 'Add at least two participants before comparing midpoint modes.')
+    }
+
+    const result = await loadRoutingResult(currentLocations)
+    return buildMidpointComparison(currentLocations, result.midpoint)
+  }, [loadRoutingResult])
+
+  const applyMeetupPlan = useCallback(async (mode: MidpointMode, expectedRevision?: number) => {
+    if (expectedRevision != null && expectedRevision !== revisionRef.current) {
+      throw new WebMcpActionError('stale_revision', 'The meetup plan changed after it was compared. Read the current plan and try again.')
+    }
+
+    const currentLocations = locationsRef.current.map((location) => ({ ...location }))
+    if (currentLocations.length < 2) {
+      throw new WebMcpActionError('participants_required', 'Add at least two participants before applying a meetup plan.')
+    }
+
+    if (mode === 'geographic') {
+      const previousMode = midpointModeRef.current
+      selectMidpointMode('geographic')
+      if (previousMode === 'geographic') revisionRef.current += 1
+      return getCurrentPlan()
+    }
+
+    const result = await loadRoutingResult(currentLocations)
+    routingMidpointRef.current = result.midpoint
+    setRoutingMidpoint(result.midpoint)
+    setRoutePaths(result.routePaths)
+    setRoutingMidpointError(
+      result.midpoint.fallbackToGeographic
+        ? (result.midpoint.reason ?? 'Road-based midpoint unavailable.')
+        : (result.routePathWarning ?? null)
+    )
+    const previousMode = midpointModeRef.current
+    selectMidpointMode('routing')
+    if (previousMode === 'routing') revisionRef.current += 1
+    return getCurrentPlan()
+  }, [getCurrentPlan, loadRoutingResult, selectMidpointMode])
+
+  const webMcpActions = useMemo<WebMcpActions>(() => ({
+    getRevision: () => revisionRef.current,
+    searchLocations: searchLocation,
+    setParticipants: (participants) => updateLocations(participants, true),
+    getCurrentPlan,
+    compareMidpointModes,
+    applyMeetupPlan
+  }), [applyMeetupPlan, compareMidpointModes, getCurrentPlan, updateLocations])
+
+  useEffect(() => {
+    if (typeof document.modelContext?.registerTool !== 'function') {
+      setIsWebMcpReady(false)
+      return
+    }
+
+    const controller = new AbortController()
+    let active = true
+
+    void registerMeetupTools(document.modelContext, webMcpActions, controller.signal)
+      .then(() => {
+        if (active) setIsWebMcpReady(true)
+      })
+      .catch((error) => {
+        if (active && !controller.signal.aborted) {
+          console.error('[webmcp] registration failed:', error)
+          setIsWebMcpReady(false)
+        }
+      })
+
+    return () => {
+      active = false
+      controller.abort()
+      setIsWebMcpReady(false)
+    }
+  }, [webMcpActions])
+
+  useEffect(() => {
+    if (!isMcpGuideOpen) return
+
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setIsMcpGuideOpen(false)
+    }
+
+    window.addEventListener('keydown', closeOnEscape)
+    return () => window.removeEventListener('keydown', closeOnEscape)
+  }, [isMcpGuideOpen])
 
   const main = isDark
     ? 'relative h-screen w-screen overflow-hidden flex flex-col md:flex-row bg-zinc-950'
@@ -323,28 +512,56 @@ export default function Home() {
 
   const midpointModeLabel = midpointMode === 'routing' ? 'Road-Based Midpoint' : 'Geographic Midpoint'
   const midpointDescription = midpointMode === 'routing'
-    ? 'Optimized to balance road travel time as fairly as possible across all selected participants.'
-    : `Sharing the travel distance equally among all ${locations.length} participants.`
+    ? routingSearch?.strategy === 'directed-route-half-duration'
+      ? 'Half-duration point along the directed route between the two participants.'
+      : 'Optimized to reduce the longest road journey, then total group travel time.'
+    : `Coordinate-average center for all ${locations.length} participants.`
 
   const sidebarContent = (
     <>
       <div>
         <h1 className={`text-xl font-bold tracking-tight ${titleText}`}>Mana nak lepak ni?</h1>
         <p className={`text-xs mt-1 ${subtitleText}`}>Find fair meeting spots for everyone</p>
+        {isWebMcpReady && (
+          <span className={`mt-2 inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider ${isDark ? 'border-emerald-400/25 bg-emerald-400/10 text-emerald-300' : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`}>
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+            Agent tools ready
+          </span>
+        )}
       </div>
+
+      <button
+        type="button"
+        onClick={() => setIsMcpGuideOpen(true)}
+        className={`group flex w-full items-center gap-3 rounded-2xl border p-3 text-left transition-all ${isDark
+          ? 'border-blue-400/20 bg-blue-400/10 hover:border-blue-400/40 hover:bg-blue-400/15'
+          : 'border-blue-200 bg-blue-50 hover:border-blue-300 hover:bg-blue-100'
+          }`}
+      >
+        <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${isDark ? 'bg-blue-400/15 text-blue-300' : 'bg-white text-blue-600'}`}>
+          <Bot className="h-4 w-4" />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className={`block text-xs font-semibold ${titleText}`}>Connect with WebMCP</span>
+          <span className={`mt-0.5 block text-[11px] ${subtitleText}`}>
+            Setup steps and example prompt
+          </span>
+        </span>
+        <span className={`text-xs transition-transform group-hover:translate-x-0.5 ${isDark ? 'text-blue-300' : 'text-blue-600'}`}>→</span>
+      </button>
 
       <div className="flex flex-col gap-2">
         <div className={modeSwitchShell}>
           <button
             type="button"
-            onClick={() => setMidpointMode('geographic')}
+            onClick={() => selectMidpointMode('geographic')}
             className={getModeButtonClass('geographic')}
           >
             Geographic
           </button>
           <button
             type="button"
-            onClick={() => setMidpointMode('routing')}
+            onClick={() => selectMidpointMode('routing')}
             className={getModeButtonClass('routing')}
           >
             Road-based
@@ -473,6 +690,13 @@ export default function Home() {
 
           <p className={midpointDesc}>{midpointDescription}</p>
 
+          {routingSearch?.strategy === 'multi-ring-refinement' && (
+            <div className={`mb-4 rounded-xl border px-3 py-2 text-[11px] ${isDark ? 'border-blue-400/20 bg-blue-400/10 text-blue-200' : 'border-blue-200 bg-blue-50 text-blue-700'}`}>
+              Multi-ring search: {routingSearch.stage1CandidateCount} broad + {routingSearch.stage2CandidateCount} refined candidates
+              {!routingSearch.stage2Completed ? ' (broad winner retained)' : ''}
+            </div>
+          )}
+
           {primaryNearbyPlace && (
             <div className={`mb-4 inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium ${isDark ? 'border-white/10 bg-white/8 text-zinc-100' : 'border-slate-200 bg-white/70 text-slate-700'}`}>
               <span className="h-2 w-2 rounded-full bg-amber-400" />
@@ -500,6 +724,14 @@ export default function Home() {
 
           {showRoutingMetrics && routingMetrics && (
             <div className="mb-4 grid grid-cols-2 gap-2">
+              <div className={statBoxClass}>
+                <p className={statLabelClass}>Longest Journey</p>
+                <p className={statValueClass}>{formatDuration(routingMetrics.maximumDurationSec)}</p>
+              </div>
+              <div className={statBoxClass}>
+                <p className={statLabelClass}>Time Spread</p>
+                <p className={statValueClass}>{formatDuration(routingMetrics.durationSpreadSec)}</p>
+              </div>
               <div className={statBoxClass}>
                 <p className={statLabelClass}>Total Travel Time</p>
                 <p className={statValueClass}>{formatDuration(routingMetrics.totalDurationSec)}</p>
@@ -564,7 +796,7 @@ export default function Home() {
             </div>
             <div className="flex-1 min-w-0">
               <h1 className={`text-lg font-bold tracking-tight ${titleText}`}>Mana nak lepak ni?</h1>
-              <p className={`text-xs ${subtitleText}`}>Find fair meeting spots for everyone</p>
+              <p className={`text-xs ${subtitleText}`}>{isWebMcpReady ? 'Agent tools ready' : 'Find fair meeting spots for everyone'}</p>
             </div>
             <button
               type="button"
@@ -633,6 +865,16 @@ export default function Home() {
                 <span className="text-xs font-semibold">{locations.length}</span>
               </div>
 
+              <button
+                type="button"
+                onClick={() => setIsMcpGuideOpen(true)}
+                className={`${railBadge} transition-colors ${isDark ? 'hover:border-blue-400/40 hover:text-blue-300' : 'hover:border-blue-300 hover:text-blue-600'}`}
+                title="Connect with WebMCP"
+                aria-label="Open WebMCP integration guide"
+              >
+                <Bot className="w-4 h-4" />
+              </button>
+
               {midpoint && (
                 <div className={railBadge} title={`${midpointModeLabel} available`}>
                   <MapPin className="w-4 h-4 text-amber-400" />
@@ -673,6 +915,116 @@ export default function Home() {
         />
         <div className={floatingCreditClass}>Built for fair Malaysian meetups</div>
       </div>
+
+      <AnimatePresence>
+        {isMcpGuideOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/65 p-4 backdrop-blur-sm"
+            onMouseDown={(event) => {
+              if (event.target === event.currentTarget) setIsMcpGuideOpen(false)
+            }}
+          >
+            <motion.section
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="webmcp-guide-title"
+              initial={{ opacity: 0, y: 18, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 12, scale: 0.98 }}
+              transition={{ duration: 0.2 }}
+              className={`max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-3xl border shadow-2xl ${isDark
+                ? 'border-white/10 bg-zinc-950 text-zinc-100'
+                : 'border-slate-200 bg-white text-slate-900'
+                }`}
+            >
+              <div className={`sticky top-0 z-10 flex items-start justify-between gap-4 border-b p-5 backdrop-blur-xl ${isDark ? 'border-white/10 bg-zinc-950/90' : 'border-slate-200 bg-white/90'}`}>
+                <div className="flex items-start gap-3">
+                  <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl ${isDark ? 'bg-blue-400/15 text-blue-300' : 'bg-blue-50 text-blue-600'}`}>
+                    <Bot className="h-5 w-5" />
+                  </span>
+                  <div>
+                    <p className={`text-[10px] font-bold uppercase tracking-[0.2em] ${isDark ? 'text-blue-300' : 'text-blue-600'}`}>Site tools</p>
+                    <h2 id="webmcp-guide-title" className="mt-1 text-xl font-bold">Use Mana Nak Lepak Ni with ChatGPT</h2>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsMcpGuideOpen(false)}
+                  className={`rounded-xl p-2 transition-colors ${isDark ? 'text-zinc-400 hover:bg-white/10 hover:text-white' : 'text-slate-400 hover:bg-slate-100 hover:text-slate-700'}`}
+                  aria-label="Close WebMCP integration guide"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              <div className="space-y-5 p-5">
+                <div className={`flex items-start gap-3 rounded-2xl border p-4 ${isWebMcpReady
+                  ? isDark ? 'border-emerald-400/25 bg-emerald-400/10' : 'border-emerald-200 bg-emerald-50'
+                  : isDark ? 'border-amber-400/25 bg-amber-400/10' : 'border-amber-200 bg-amber-50'
+                  }`}>
+                  <CheckCircle2 className={`mt-0.5 h-5 w-5 shrink-0 ${isWebMcpReady ? 'text-emerald-400' : 'text-amber-400'}`} />
+                  <div>
+                    <p className="text-sm font-semibold">
+                      {isWebMcpReady ? 'Connected — 5 tools available' : 'Site tools not detected in this browser'}
+                    </p>
+                    <p className={`mt-1 text-xs leading-5 ${subtitleText}`}>
+                      {isWebMcpReady
+                        ? 'ChatGPT can discover the planner actions exposed by this page.'
+                        : 'The app still works normally. Follow the steps below in ChatGPT’s built-in browser to use the agent integration.'}
+                    </p>
+                  </div>
+                </div>
+
+                <div>
+                  <h3 className="text-sm font-semibold">How to connect</h3>
+                  <ol className="mt-3 space-y-3">
+                    {[
+                      ['Update ChatGPT', 'Use the latest ChatGPT desktop app and select GPT-5.6 Sol or GPT-5.6 Terra.'],
+                      ['Open this website', 'Open the deployed Mana Nak Lepak Ni URL in ChatGPT’s built-in browser.'],
+                      ['Inspect Site tools', 'Select Site tools in the browser address bar, then open Available site tools. You should see five planner tools.'],
+                      ['Ask ChatGPT to plan', 'Describe everyone’s starting locations and ask it to compare the geographic and road-based midpoint before applying your choice.']
+                    ].map(([title, description], index) => (
+                      <li key={title} className="flex gap-3">
+                        <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold ${isDark ? 'bg-white/10 text-zinc-200' : 'bg-slate-100 text-slate-700'}`}>
+                          {index + 1}
+                        </span>
+                        <div>
+                          <p className="text-sm font-medium">{title}</p>
+                          <p className={`mt-0.5 text-xs leading-5 ${subtitleText}`}>{description}</p>
+                        </div>
+                      </li>
+                    ))}
+                  </ol>
+                </div>
+
+                <div className={`rounded-2xl border p-4 ${isDark ? 'border-white/10 bg-black/30' : 'border-slate-200 bg-slate-50'}`}>
+                  <p className={`text-[10px] font-bold uppercase tracking-[0.18em] ${subtitleText}`}>Try this prompt</p>
+                  <p className="mt-2 text-sm leading-6">
+                    “Plan a fair meetup for friends coming from Bangi, Cyberjaya, and Shah Alam. Compare both midpoint modes, explain the longest journey, then ask me before applying the plan.”
+                  </p>
+                </div>
+
+                <p className={`text-xs leading-5 ${subtitleText}`}>
+                  No separate MCP server or API-key setup is required. These tools belong to the live page and share the same visible map state with you.
+                </p>
+
+                <a
+                  href="https://learn.chatgpt.com/docs/webmcp"
+                  target="_blank"
+                  rel="noreferrer"
+                  className={`inline-flex items-center gap-2 text-xs font-semibold ${isDark ? 'text-blue-300 hover:text-blue-200' : 'text-blue-600 hover:text-blue-700'}`}
+                >
+                  Read the official Site tools guide
+                  <ExternalLink className="h-3.5 w-3.5" />
+                </a>
+              </div>
+            </motion.section>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </main>
   )
 }
