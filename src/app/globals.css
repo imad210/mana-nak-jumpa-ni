@@ -81,6 +81,10 @@ body {
   display: none !important;
 }
 
+.leaflet-dark-tiles .map-base-tile {
+  filter: invert(1) hue-rotate(180deg) saturate(0.55) brightness(0.82) contrast(1.15);
+}
+
 /* ── Leaflet — light mode overrides ─────────────────────────────────────── */
 .leaflet-light .leaflet-container {
   background: #f1f5f9 !important;

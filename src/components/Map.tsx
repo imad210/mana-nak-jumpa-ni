@@ -24,7 +24,8 @@ const malaysiaBounds = L.latLngBounds(
   L.latLng(0.8, 98.0),
   L.latLng(7.6, 119.8)
 )
-const attribution = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>'
+const attribution = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+const tileUrl = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png'
 
 function escapeHtml(value: string) {
   return value.replace(/[&<>'"]/g, (character) => ({
@@ -44,17 +45,10 @@ interface MapProps {
   isDark: boolean
 }
 
-function getTileUrl(isDark: boolean) {
-  return isDark
-    ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
-    : 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png'
-}
-
 export default function Map({ locations, midpoint, midpointMode, routePaths, isDark }: MapProps) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const mapRef = useRef<L.Map | null>(null)
   const overlayLayerRef = useRef<L.LayerGroup | null>(null)
-  const initialThemeRef = useRef(isDark)
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) {
@@ -68,7 +62,11 @@ export default function Map({ locations, midpoint, midpointMode, routePaths, isD
       scrollWheelZoom: true
     })
 
-    L.tileLayer(getTileUrl(initialThemeRef.current), { attribution }).addTo(map)
+    L.tileLayer(tileUrl, {
+      attribution,
+      className: 'map-base-tile',
+      referrerPolicy: 'strict-origin-when-cross-origin'
+    }).addTo(map)
 
     const overlayLayer = L.layerGroup().addTo(map)
     mapRef.current = map
@@ -184,5 +182,5 @@ export default function Map({ locations, midpoint, midpointMode, routePaths, isD
     })
   }, [locations, midpoint, midpointMode, routePaths])
 
-  return <div ref={containerRef} className={`relative h-full w-full ${!isDark ? 'leaflet-light' : ''}`} />
+  return <div ref={containerRef} className={`relative h-full w-full ${isDark ? 'leaflet-dark-tiles' : 'leaflet-light'}`} />
 }
