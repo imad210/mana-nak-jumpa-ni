@@ -5,7 +5,6 @@ import dynamic from 'next/dynamic'
 import {
   Search,
   MapPin,
-  Users,
   X,
   Loader2,
   Navigation,
@@ -15,7 +14,18 @@ import {
   PanelLeftOpen,
   Bot,
   ExternalLink,
-  CheckCircle2
+  CheckCircle2,
+  ChevronDown,
+  ChevronUp,
+  Clock,
+  Copy,
+  Check,
+  Globe2,
+  Plus,
+  Route as RouteIcon,
+  Sparkles,
+  Trash2,
+  AlertTriangle
 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
@@ -31,15 +41,25 @@ import {
 } from '@/lib/utils'
 import { buildMidpointComparison, buildPlanSnapshot, getLocationsKey } from '@/lib/meetup-planner'
 import { registerMeetupTools, WebMcpActionError, type WebMcpActions } from '@/lib/webmcp'
+import { getParticipantColor, getParticipantLetter } from '@/lib/participant-style'
 
 const Map = dynamic(() => import('@/components/Map'), {
   ssr: false,
   loading: () => (
-    <div className="w-full h-full flex items-center justify-center bg-slate-950">
+    <div className="w-full h-full flex items-center justify-center bg-slate-200 dark:bg-zinc-950">
       <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
     </div>
   )
 })
+
+const MAX_LOCATIONS = 10
+const THEME_STORAGE_KEY = 'midpoint-theme'
+
+const EXAMPLE_LOCATIONS: Location[] = [
+  { name: 'Bandar Baru Bangi, Selangor, Malaysia', lat: 2.9635, lng: 101.7690 },
+  { name: 'Cyberjaya, Selangor, Malaysia', lat: 2.9213, lng: 101.6559 },
+  { name: 'Shah Alam, Selangor, Malaysia', lat: 3.0733, lng: 101.5185 }
+]
 
 function formatDuration(seconds?: number | null) {
   if (seconds == null || !Number.isFinite(seconds)) {
@@ -83,7 +103,10 @@ export default function Home() {
   const [isSearching, setIsSearching] = useState(false)
   const [searchResults, setSearchResults] = useState<Location[]>([])
   const [isDark, setIsDark] = useState(true)
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(true)
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
+  const [searchStatus, setSearchStatus] = useState<'idle' | 'empty'>('idle')
+  const [hasCopied, setHasCopied] = useState(false)
+  const searchBoxRef = useRef<HTMLDivElement | null>(null)
   const [isMcpGuideOpen, setIsMcpGuideOpen] = useState(false)
   const [midpointMode, setMidpointMode] = useState<MidpointMode>('geographic')
   const [routingMidpoint, setRoutingMidpoint] = useState<MidpointComputation | null>(null)
@@ -314,15 +337,66 @@ export default function Home() {
     setIsSearching(true)
     const results = await searchLocation(searchQuery)
     setSearchResults(results)
+    setSearchStatus(results.length === 0 ? 'empty' : 'idle')
     setIsSearching(false)
   }
 
-  const addLocation = (loc: Location) => {
-    if (locationsRef.current.length >= 10) return
-    if (locationsRef.current.some((location) => location.lat === loc.lat && location.lng === loc.lng)) return
-    updateLocations([...locationsRef.current, loc])
+  const clearSearch = () => {
     setSearchQuery('')
     setSearchResults([])
+    setSearchStatus('idle')
+  }
+
+  const loadExample = () => {
+    updateLocations(EXAMPLE_LOCATIONS)
+    clearSearch()
+  }
+
+  const copyCoordinates = (point: Location) => {
+    void navigator.clipboard?.writeText(`${point.lat.toFixed(6)}, ${point.lng.toFixed(6)}`).then(() => {
+      setHasCopied(true)
+      window.setTimeout(() => setHasCopied(false), 1600)
+    })
+  }
+
+  const toggleTheme = () => {
+    setIsDark((dark) => {
+      const next = !dark
+      try {
+        localStorage.setItem(THEME_STORAGE_KEY, next ? 'dark' : 'light')
+      } catch { }
+      return next
+    })
+  }
+
+  useEffect(() => {
+    let stored: string | null = null
+    try {
+      stored = localStorage.getItem(THEME_STORAGE_KEY)
+    } catch { }
+    const prefersDark = stored ? stored === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches
+    setIsDark(prefersDark)
+  }, [])
+
+  useEffect(() => {
+    if (searchResults.length === 0 && searchStatus === 'idle') return
+
+    const closeOnOutsideClick = (event: PointerEvent) => {
+      if (searchBoxRef.current && !searchBoxRef.current.contains(event.target as Node)) {
+        setSearchResults([])
+        setSearchStatus('idle')
+      }
+    }
+
+    document.addEventListener('pointerdown', closeOnOutsideClick)
+    return () => document.removeEventListener('pointerdown', closeOnOutsideClick)
+  }, [searchResults.length, searchStatus])
+
+  const addLocation = (loc: Location) => {
+    if (locationsRef.current.length >= MAX_LOCATIONS) return
+    if (locationsRef.current.some((location) => location.lat === loc.lat && location.lng === loc.lng)) return
+    updateLocations([...locationsRef.current, loc])
+    clearSearch()
   }
 
   const removeLocation = (index: number) => {
@@ -426,89 +500,11 @@ export default function Home() {
     return () => window.removeEventListener('keydown', closeOnEscape)
   }, [isMcpGuideOpen])
 
-  const main = isDark
-    ? 'relative h-screen w-screen overflow-hidden flex flex-col md:flex-row bg-zinc-950'
-    : 'relative h-screen w-screen overflow-hidden flex flex-col md:flex-row bg-slate-100'
-
-  const sidebarShell = isDark
-    ? 'bg-zinc-900/88 border-white/10 shadow-2xl'
-    : 'bg-white/95 border-slate-200 shadow-xl'
-
-  const titleText = isDark ? 'text-white' : 'text-slate-800'
-  const subtitleText = isDark ? 'text-zinc-500' : 'text-slate-400'
-
-  const inputClass = isDark
-    ? 'w-full bg-zinc-800/60 border border-white/10 rounded-xl py-3 px-4 pr-12 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all text-sm text-white placeholder:text-zinc-500'
-    : 'w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 pr-12 focus:outline-none focus:ring-2 focus:ring-blue-400/40 transition-all text-sm text-slate-800 placeholder:text-slate-400'
-
-  const searchDropdown = isDark
-    ? 'absolute left-0 right-0 top-[calc(100%+0.5rem)] z-30 bg-zinc-900/95 backdrop-blur-md border border-white/10 rounded-xl overflow-hidden shadow-2xl'
-    : 'absolute left-0 right-0 top-[calc(100%+0.5rem)] z-30 bg-white backdrop-blur-md border border-slate-200 rounded-xl overflow-hidden shadow-xl'
-
-  const searchDropdownItem = isDark
-    ? 'w-full text-left p-3 hover:bg-white/5 transition-colors border-b border-white/5 last:border-0 truncate text-sm flex items-center gap-2 text-zinc-200'
-    : 'w-full text-left p-3 hover:bg-slate-50 transition-colors border-b border-slate-100 last:border-0 truncate text-sm flex items-center gap-2 text-slate-700'
-
-  const locationItemClass = isDark
-    ? 'group rounded-2xl bg-white/5 border border-white/5 hover:border-white/10 transition-all'
-    : 'group rounded-2xl bg-slate-50 border border-slate-200 hover:border-slate-300 transition-all'
-
-  const locationNameClass = isDark ? 'text-sm font-medium text-white' : 'text-sm font-medium text-slate-700'
-  const emptyStateClass = isDark ? 'text-zinc-600' : 'text-slate-300'
-  const emptyTextClass = isDark ? 'text-sm font-medium text-center text-zinc-500' : 'text-sm font-medium text-center text-slate-400'
-
-  const toggleBtnClass = isDark
-    ? 'p-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white border border-white/10 transition-all'
-    : 'p-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-700 border border-slate-200 transition-all'
-
-  const floatingCreditClass = isDark
-    ? 'absolute bottom-6 right-6 z-10 p-2 px-3 bg-black/40 backdrop-blur-md border border-white/10 rounded-lg text-[10px] font-medium text-zinc-500'
-    : 'absolute bottom-6 right-6 z-10 p-2 px-3 bg-white/80 backdrop-blur-md border border-slate-200 rounded-lg text-[10px] font-medium text-slate-400'
-
-  const midpointCard = isDark
-    ? 'p-4 rounded-2xl bg-gradient-to-br from-amber-500/30 to-blue-600/25 border border-amber-500/30 backdrop-blur-md'
-    : 'p-4 rounded-2xl bg-gradient-to-br from-amber-400/25 to-blue-500/20 border border-amber-400/40 backdrop-blur-md'
-
-  const midpointTagText = 'text-[10px] uppercase font-bold tracking-widest text-amber-400'
-  const midpointHeading = isDark ? 'font-bold text-lg text-white' : 'font-bold text-lg text-slate-800'
-  const midpointDesc = isDark ? 'text-xs text-zinc-200 mb-4' : 'text-xs text-slate-600 mb-4'
-  const midpointCoordBox = isDark
-    ? 'p-2 rounded-lg bg-black/50 border border-white/10 text-[11px] font-medium text-zinc-200'
-    : 'p-2 rounded-lg bg-white/60 border border-slate-200 text-[11px] font-medium text-slate-700'
-
-  const railBadge = isDark
-    ? 'flex h-11 w-11 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-zinc-200 shadow-[0_10px_30px_rgba(0,0,0,0.25)]'
-    : 'flex h-11 w-11 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-slate-600 shadow-[0_10px_24px_rgba(15,23,42,0.08)]'
-
-  const railDivider = isDark ? 'bg-white/8' : 'bg-slate-200'
-
-  const modeSwitchShell = isDark
-    ? 'grid grid-cols-2 gap-1 rounded-2xl border border-white/10 bg-black/30 p-1'
-    : 'grid grid-cols-2 gap-1 rounded-2xl border border-slate-200 bg-slate-100/80 p-1'
-
-  const getModeButtonClass = (mode: MidpointMode) => {
-    const isActive = midpointMode === mode
-
-    if (isActive) {
-      return isDark
-        ? 'rounded-xl bg-blue-500 px-3 py-2.5 text-xs font-semibold text-white shadow-[0_12px_30px_rgba(37,99,235,0.35)] transition-all'
-        : 'rounded-xl bg-blue-600 px-3 py-2.5 text-xs font-semibold text-white shadow-[0_12px_30px_rgba(37,99,235,0.2)] transition-all'
-    }
-
-    return isDark
-      ? 'rounded-xl px-3 py-2.5 text-xs font-medium text-zinc-300 transition-all hover:bg-white/5'
-      : 'rounded-xl px-3 py-2.5 text-xs font-medium text-slate-500 transition-all hover:bg-white'
-  }
-
-  const statBoxClass = isDark
-    ? 'rounded-xl border border-white/10 bg-black/35 p-3'
-    : 'rounded-xl border border-slate-200 bg-white/70 p-3'
-
-  const statLabelClass = isDark ? 'text-[10px] uppercase tracking-[0.18em] text-zinc-500' : 'text-[10px] uppercase tracking-[0.18em] text-slate-400'
-  const statValueClass = isDark ? 'mt-1 text-sm font-semibold text-white' : 'mt-1 text-sm font-semibold text-slate-800'
-  const locationMetricPillClass = isDark
-    ? 'rounded-full border border-white/10 bg-black/35 px-2.5 py-1 text-[11px] font-medium text-zinc-200'
-    : 'rounded-full border border-slate-200 bg-white/80 px-2.5 py-1 text-[11px] font-medium text-slate-700'
+  const isPanelOpen = !isSidebarCollapsed
+  const canSearch = locations.length < MAX_LOCATIONS
+  const longestIndex = showRoutingMetrics && routingMetrics
+    ? routingMetrics.perLocationDurationSec.indexOf(Math.max(...routingMetrics.perLocationDurationSec))
+    : -1
 
   const midpointModeLabel = midpointMode === 'routing' ? 'Road-Based Midpoint' : 'Geographic Midpoint'
   const midpointDescription = midpointMode === 'routing'
@@ -517,393 +513,428 @@ export default function Home() {
       : 'Optimized to reduce the longest road journey, then total group travel time.'
     : `Coordinate-average center for all ${locations.length} participants.`
 
-  const sidebarContent = (
-    <>
-      <div>
-        <h1 className={`text-xl font-bold tracking-tight ${titleText}`}>Mana nak lepak ni?</h1>
-        <p className={`text-xs mt-1 ${subtitleText}`}>Find fair meeting spots for everyone</p>
-        {isWebMcpReady && (
-          <span className={`mt-2 inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider ${isDark ? 'border-emerald-400/25 bg-emerald-400/10 text-emerald-300' : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`}>
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-            Agent tools ready
-          </span>
-        )}
-      </div>
+  const panelSummary = locations.length === 0
+    ? 'Find fair meeting spots for everyone'
+    : midpoint
+      ? primaryNearbyPlace ? `${locations.length} places · near ${primaryNearbyPlace}` : `${locations.length} places · midpoint ready`
+      : `${locations.length} place · add one more`
 
-      <button
-        type="button"
-        onClick={() => setIsMcpGuideOpen(true)}
-        className={`group flex w-full items-center gap-3 rounded-2xl border p-3 text-left transition-all ${isDark
-          ? 'border-blue-400/20 bg-blue-400/10 hover:border-blue-400/40 hover:bg-blue-400/15'
-          : 'border-blue-200 bg-blue-50 hover:border-blue-300 hover:bg-blue-100'
-          }`}
-      >
-        <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${isDark ? 'bg-blue-400/15 text-blue-300' : 'bg-white text-blue-600'}`}>
-          <Bot className="h-4 w-4" />
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className={`block text-xs font-semibold ${titleText}`}>Connect with WebMCP</span>
-          <span className={`mt-0.5 block text-[11px] ${subtitleText}`}>
-            Setup steps and example prompt
-          </span>
-        </span>
-        <span className={`text-xs transition-transform group-hover:translate-x-0.5 ${isDark ? 'text-blue-300' : 'text-blue-600'}`}>→</span>
-      </button>
+  const iconButton = 'inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50 dark:border-white/10 dark:bg-white/5 dark:text-zinc-400 dark:hover:bg-white/10 dark:hover:text-white'
+  const sectionLabel = 'text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400 dark:text-zinc-500'
+  const statBox = 'rounded-xl border border-slate-200/80 bg-white/70 p-3 dark:border-white/10 dark:bg-black/25'
 
-      <div className="flex flex-col gap-2">
-        <div className={modeSwitchShell}>
-          <button
-            type="button"
-            onClick={() => selectMidpointMode('geographic')}
-            className={getModeButtonClass('geographic')}
-          >
-            Geographic
-          </button>
-          <button
-            type="button"
-            onClick={() => selectMidpointMode('routing')}
-            className={getModeButtonClass('routing')}
-          >
-            Road-based
-          </button>
-        </div>
-        <p className={`text-[11px] ${subtitleText}`}>
-          Switch between straight geographic averaging and a fairness-based road midpoint.
-        </p>
-      </div>
-
-      <div className="relative">
-        <form onSubmit={handleSearch} className="relative">
-          <input
-            type="text"
-            placeholder="Search location korang dari mana (e.g. Putrajaya)"
-            className={inputClass}
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-          />
-          <button
-            type="submit"
-            className="absolute right-2 top-2 p-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-500 transition-colors"
-          >
-            {isSearching ? <Loader2 className="w-5 h-5 animate-spin" /> : <Search className="w-5 h-5" />}
-          </button>
-        </form>
-
-        <AnimatePresence>
-          {searchResults.length > 0 && (
-            <motion.div
-              initial={{ opacity: 0, y: -8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -8 }}
-              className={searchDropdown}
-            >
-              {searchResults.map((loc, i) => (
-                <button
-                  type="button"
-                  key={`${loc.lat}-${loc.lng}-${i}`}
-                  onClick={() => addLocation(loc)}
-                  className={searchDropdownItem}
-                >
-                  <MapPin className="w-4 h-4 text-blue-400 shrink-0" />
-                  <span className="truncate">{loc.name}</span>
-                </button>
-              ))}
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
-
-      <div className="flex flex-col gap-3">
-        {locations.length > 0 ? (
-          <>
-            <div className="flex items-center justify-between">
-              <p className={`text-[10px] uppercase font-bold tracking-widest ${isDark ? 'text-zinc-500' : 'text-slate-400'}`}>
-                Selected Places
-              </p>
-              <span className={`text-[11px] ${subtitleText}`}>{locations.length} places</span>
-            </div>
-
-            <div className="max-h-52 overflow-y-auto custom-scrollbar space-y-3 pr-1">
-              {locations.map((loc, i) => {
-                const duration = showRoutingMetrics && routingMetrics ? routingMetrics.perLocationDurationSec[i] : null
-                const distance = showRoutingMetrics && routingMetrics ? routingMetrics.perLocationDistanceKm[i] : null
-
-                return (
-                  <motion.div
-                    layout
-                    initial={{ opacity: 0, scale: 0.95 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    className={locationItemClass}
-                    key={`${loc.lat}-${loc.lng}-${i}`}
-                  >
-                    <div className="flex items-start gap-3 p-3">
-                      <div className="mt-1 w-2 h-2 rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.5)] shrink-0" />
-
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-start gap-2">
-                          <span className={`${locationNameClass} min-w-0`}>{getLocationLabel(loc.name)}</span>
-                          <button
-                            type="button"
-                            onClick={() => removeLocation(i)}
-                            className="opacity-0 group-hover:opacity-100 p-1 rounded-md hover:bg-red-500/20 text-red-400 transition-all shrink-0"
-                          >
-                            <X className="w-4 h-4" />
-                          </button>
-                        </div>
-
-                        {showRoutingMetrics && (
-                          <div className="mt-3 flex flex-wrap gap-2">
-                            <span className={locationMetricPillClass}>{formatDuration(duration)}</span>
-                            <span className={locationMetricPillClass}>{formatDistance(distance)}</span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </motion.div>
-                )
-              })}
-            </div>
-          </>
-        ) : (
-          <div className={`flex flex-col items-center justify-center gap-4 py-10 ${emptyStateClass}`}>
-            <Users className="w-12 h-12 opacity-20" />
-            <p className={emptyTextClass}>Add up to 10 places to find<br />the perfect meet-up midpoint</p>
-          </div>
-        )}
-      </div>
-
-      {midpoint && (
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className={midpointCard}
-        >
-          <div className="flex items-center gap-3 mb-3">
-            <div className="p-2 rounded-lg bg-amber-500 shadow-[0_0_15px_rgba(245,158,11,0.5)]">
-              <MapPin className="w-5 h-5 text-zinc-950" />
-            </div>
-            <div>
-              <span className={midpointTagText}>{midpointModeLabel}</span>
-              <h3 className={midpointHeading}>Lepak sini jom</h3>
-            </div>
-          </div>
-
-          <p className={midpointDesc}>{midpointDescription}</p>
-
-          {routingSearch?.strategy === 'multi-ring-refinement' && (
-            <div className={`mb-4 rounded-xl border px-3 py-2 text-[11px] ${isDark ? 'border-blue-400/20 bg-blue-400/10 text-blue-200' : 'border-blue-200 bg-blue-50 text-blue-700'}`}>
-              Multi-ring search: {routingSearch.stage1CandidateCount} broad + {routingSearch.stage2CandidateCount} refined candidates
-              {!routingSearch.stage2Completed ? ' (broad winner retained)' : ''}
-            </div>
-          )}
-
-          {primaryNearbyPlace && (
-            <div className={`mb-4 inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium ${isDark ? 'border-white/10 bg-white/8 text-zinc-100' : 'border-slate-200 bg-white/70 text-slate-700'}`}>
-              <span className="h-2 w-2 rounded-full bg-amber-400" />
-              Near {primaryNearbyPlace}
-            </div>
-          )}
-
-          {midpointMode === 'routing' && (isRoutingMidpointLoading || routingMidpointError) && (
-            <div className={`mb-4 rounded-xl border px-3 py-2 text-xs ${isDark ? 'border-white/10 bg-black/30 text-zinc-300' : 'border-slate-200 bg-white/70 text-slate-600'}`}>
-              {isRoutingMidpointLoading ? (
-                <span className="flex items-center gap-2">
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  Calculating road-based midpoint...
-                </span>
-              ) : (
-                routingMidpointError
-              )}
-            </div>
-          )}
-
-          <div className="grid grid-cols-2 gap-2 mb-4">
-            <div className={midpointCoordBox}>LAT: {midpoint.lat.toFixed(4)}</div>
-            <div className={midpointCoordBox}>LNG: {midpoint.lng.toFixed(4)}</div>
-          </div>
-
-          {showRoutingMetrics && routingMetrics && (
-            <div className="mb-4 grid grid-cols-2 gap-2">
-              <div className={statBoxClass}>
-                <p className={statLabelClass}>Longest Journey</p>
-                <p className={statValueClass}>{formatDuration(routingMetrics.maximumDurationSec)}</p>
-              </div>
-              <div className={statBoxClass}>
-                <p className={statLabelClass}>Time Spread</p>
-                <p className={statValueClass}>{formatDuration(routingMetrics.durationSpreadSec)}</p>
-              </div>
-              <div className={statBoxClass}>
-                <p className={statLabelClass}>Total Travel Time</p>
-                <p className={statValueClass}>{formatDuration(routingMetrics.totalDurationSec)}</p>
-              </div>
-              <div className={statBoxClass}>
-                <p className={statLabelClass}>Total Road Distance</p>
-                <p className={statValueClass}>{formatDistance(routingMetrics.totalDistanceKm)}</p>
-              </div>
-            </div>
-          )}
-
-          <div>
-            <p className={`text-[10px] uppercase font-bold tracking-widest mb-2 ${isDark ? 'text-zinc-500' : 'text-slate-400'}`}>
-              Suggested Spots
-            </p>
-            {isFetchingNearby ? (
-              <div className="flex items-center gap-2 text-xs text-zinc-500">
-                <Loader2 className="w-3 h-3 animate-spin" />
-                Finding nearby spots...
-              </div>
-            ) : (
-              <div className="flex flex-wrap gap-2">
-                {nearbyPlaces.map((place, i) => (
-                  <motion.span
-                    key={`${place.name}-${i}`}
-                    initial={{ opacity: 0, scale: 0.85 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    transition={{ delay: i * 0.07 }}
-                    className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border transition-all cursor-default ${isDark
-                      ? 'bg-white/8 border-white/10 text-zinc-200 hover:bg-white/15'
-                      : 'bg-slate-100 border-slate-200 text-slate-600 hover:bg-slate-200'
-                      }`}
-                    title={`~${place.distanceKm.toFixed(1)} km from midpoint`}
-                  >
-                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />
-                    {place.name}
-                    <span className={`text-[9px] ${isDark ? 'text-zinc-500' : 'text-slate-400'}`}>
-                      {place.distanceKm.toFixed(1)}km
-                    </span>
-                  </motion.span>
-                ))}
-                {!isFetchingNearby && nearbyPlaces.length === 0 && (
-                  <span className={`text-xs ${isDark ? 'text-zinc-600' : 'text-slate-400'}`}>
-                    No suggestions found.
-                  </span>
-                )}
-              </div>
-            )}
-          </div>
-        </motion.div>
-      )}
-    </>
+  const themeToggle = (
+    <button
+      type="button"
+      onClick={toggleTheme}
+      className={iconButton}
+      title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+      aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+    >
+      {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+    </button>
   )
 
-  return (
-    <main className={main}>
-      <div className={`absolute inset-x-0 top-0 z-30 md:hidden ${sidebarShell}`}>
-        <div className={`border-b backdrop-blur-md ${sidebarShell}`}>
-          <div className="flex items-center gap-3 p-4">
-            <div className="p-2 rounded-xl bg-blue-500/20 text-blue-400 shrink-0">
-              <Navigation className="w-6 h-6" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <h1 className={`text-lg font-bold tracking-tight ${titleText}`}>Mana nak lepak ni?</h1>
-              <p className={`text-xs ${subtitleText}`}>{isWebMcpReady ? 'Agent tools ready' : 'Find fair meeting spots for everyone'}</p>
-            </div>
-            <button
-              type="button"
-              onClick={() => setIsDark((d) => !d)}
-              className={toggleBtnClass}
-              title={isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
-            >
-              {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-            </button>
-            <button
-              type="button"
-              onClick={() => setIsSidebarCollapsed((collapsed) => !collapsed)}
-              className={toggleBtnClass}
-              title={isSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-            >
-              {isSidebarCollapsed ? <PanelLeftOpen className="w-4 h-4" /> : <PanelLeftClose className="w-4 h-4" />}
-            </button>
-          </div>
+  const agentButton = (
+    <button
+      type="button"
+      onClick={() => setIsMcpGuideOpen(true)}
+      className={`${iconButton} relative`}
+      title="Connect with WebMCP"
+      aria-label="Open WebMCP integration guide"
+    >
+      <Bot className="h-4 w-4" />
+      {isWebMcpReady && (
+        <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border-2 border-white bg-emerald-400 dark:border-zinc-900" />
+      )}
+    </button>
+  )
 
-          <AnimatePresence initial={false}>
-            {!isSidebarCollapsed && (
-              <motion.div
-                initial={{ height: 0, opacity: 0 }}
-                animate={{ height: '70vh', opacity: 1 }}
-                exit={{ height: 0, opacity: 0 }}
-                transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
-                className="overflow-hidden"
+  const brandMark = (
+    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 text-white shadow-lg shadow-blue-500/25">
+      <Navigation className="h-5 w-5" />
+    </div>
+  )
+
+  const panelBody = (
+    <div className="flex flex-col gap-6">
+      {/* Step 1 — add places */}
+      <section className="flex flex-col gap-3">
+        <div className="flex items-center justify-between">
+          <h2 className={sectionLabel}>Where is everyone coming from?</h2>
+          <span className="text-[11px] font-medium tabular-nums text-slate-400 dark:text-zinc-500">
+            {locations.length}/{MAX_LOCATIONS}
+          </span>
+        </div>
+
+        <div className="relative" ref={searchBoxRef}>
+          <form onSubmit={handleSearch} className="relative">
+            <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 dark:text-zinc-500" />
+            <input
+              type="text"
+              enterKeyHint="search"
+              placeholder={canSearch ? 'Search a town, e.g. Putrajaya' : 'Maximum of 10 places reached'}
+              aria-label="Search for a place in Malaysia"
+              disabled={!canSearch}
+              className="w-full rounded-2xl border border-slate-200 bg-slate-50 py-3 pl-10 pr-24 text-sm text-slate-800 transition-all placeholder:text-slate-400 focus:border-blue-400 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/15 disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-white dark:placeholder:text-zinc-500 dark:focus:border-blue-400/60 dark:focus:bg-white/[0.07]"
+              value={searchQuery}
+              onChange={(e) => {
+                setSearchQuery(e.target.value)
+                setSearchStatus('idle')
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') clearSearch()
+              }}
+            />
+            <div className="absolute right-1.5 top-1/2 flex -translate-y-1/2 items-center gap-1">
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={clearSearch}
+                  className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-200/70 hover:text-slate-600 dark:text-zinc-500 dark:hover:bg-white/10 dark:hover:text-zinc-200"
+                  aria-label="Clear search"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              )}
+              <button
+                type="submit"
+                disabled={!canSearch || !searchQuery.trim() || isSearching}
+                className="inline-flex h-9 items-center justify-center rounded-xl bg-blue-600 px-3 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-blue-500 disabled:bg-blue-600/40 disabled:text-white/70"
+                aria-label="Search"
               >
-                <div className="flex h-full flex-col gap-5 overflow-y-auto custom-scrollbar p-4">
-                  {sidebarContent}
-                </div>
+                {isSearching ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Find'}
+              </button>
+            </div>
+          </form>
+
+          <AnimatePresence>
+            {(searchResults.length > 0 || searchStatus === 'empty') && (
+              <motion.div
+                initial={{ opacity: 0, y: -6 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -6 }}
+                transition={{ duration: 0.15 }}
+                className="absolute left-0 right-0 top-[calc(100%+0.5rem)] z-30 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl dark:border-white/10 dark:bg-zinc-900"
+              >
+                {searchResults.length > 0 ? (
+                  <ul className="max-h-72 overflow-y-auto custom-scrollbar py-1">
+                    {searchResults.map((loc, i) => {
+                      const alreadyAdded = locations.some((location) => location.lat === loc.lat && location.lng === loc.lng)
+                      const [primary, ...rest] = loc.name.split(',')
+                      return (
+                        <li key={`${loc.lat}-${loc.lng}-${i}`}>
+                          <button
+                            type="button"
+                            onClick={() => addLocation(loc)}
+                            disabled={alreadyAdded}
+                            className="flex w-full items-start gap-3 px-3 py-2.5 text-left transition-colors hover:bg-slate-50 focus-visible:bg-slate-50 focus-visible:outline-none disabled:cursor-default disabled:opacity-50 disabled:hover:bg-transparent dark:hover:bg-white/5 dark:focus-visible:bg-white/5"
+                          >
+                            <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600 dark:bg-blue-400/10 dark:text-blue-300">
+                              <MapPin className="h-3.5 w-3.5" />
+                            </span>
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate text-sm font-medium text-slate-800 dark:text-zinc-100">{primary.trim()}</span>
+                              <span className="block truncate text-xs text-slate-400 dark:text-zinc-500">{rest.join(',').trim() || 'Malaysia'}</span>
+                            </span>
+                            <span className="mt-1 shrink-0 text-[11px] font-semibold text-blue-600 dark:text-blue-300">
+                              {alreadyAdded ? 'Added' : <Plus className="h-4 w-4" />}
+                            </span>
+                          </button>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                ) : (
+                  <p className="px-4 py-3 text-sm text-slate-500 dark:text-zinc-400">
+                    No places found. Try a nearby town or landmark.
+                  </p>
+                )}
               </motion.div>
             )}
           </AnimatePresence>
         </div>
-      </div>
 
-      <motion.div
-        animate={{ width: isSidebarCollapsed ? 96 : 384 }}
-        transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
-        className={`absolute inset-y-0 left-0 z-20 hidden border-r backdrop-blur-md overflow-hidden md:block ${sidebarShell}`}
-      >
-        <div className="relative flex h-full w-full">
-          <div className={`flex h-full w-24 shrink-0 flex-col items-center justify-between border-r p-4 ${isDark ? 'border-white/10 bg-black/10' : 'border-slate-200 bg-white/30'}`}>
-            <div className="flex flex-col items-center gap-4">
-              <div className="p-2 rounded-xl bg-blue-500/20 text-blue-400">
-                <Navigation className="w-6 h-6" />
-              </div>
+        {locations.length > 0 ? (
+          <>
+            <ul className="flex flex-col gap-2">
+              <AnimatePresence initial={false}>
+                {locations.map((loc, i) => {
+                  const duration = showRoutingMetrics && routingMetrics ? routingMetrics.perLocationDurationSec[i] : null
+                  const distance = showRoutingMetrics && routingMetrics ? routingMetrics.perLocationDistanceKm[i] : null
+                  const [primary, ...rest] = loc.name.split(',')
 
+                  return (
+                    <motion.li
+                      layout
+                      initial={{ opacity: 0, y: -4 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, x: -12 }}
+                      transition={{ duration: 0.18 }}
+                      key={`${loc.lat}-${loc.lng}-${locations.slice(0, i).filter((other) => other.lat === loc.lat && other.lng === loc.lng).length}`}
+                      className="group flex items-center gap-3 rounded-2xl border border-slate-200/80 bg-white p-2.5 pr-2 transition-colors hover:border-slate-300 dark:border-white/[0.07] dark:bg-white/[0.04] dark:hover:border-white/15"
+                    >
+                      <span
+                        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-xs font-bold text-white shadow-sm"
+                        style={{ backgroundColor: getParticipantColor(i) }}
+                        aria-hidden="true"
+                      >
+                        {getParticipantLetter(i)}
+                      </span>
+
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-semibold text-slate-800 dark:text-zinc-100" title={loc.name}>
+                          {getLocationLabel(loc.name) || primary}
+                        </p>
+                        {showRoutingMetrics ? (
+                          <p className="mt-0.5 flex items-center gap-1.5 text-xs text-slate-500 dark:text-zinc-400">
+                            <Clock className="h-3 w-3" />
+                            <span className="font-medium text-slate-700 dark:text-zinc-200">{formatDuration(duration)}</span>
+                            <span className="text-slate-300 dark:text-zinc-600">·</span>
+                            {formatDistance(distance)}
+                            {i === longestIndex && locations.length > 1 && (
+                              <span className="ml-1 rounded-md bg-amber-100 px-1.5 py-px text-[10px] font-semibold text-amber-700 dark:bg-amber-400/15 dark:text-amber-300">
+                                Longest
+                              </span>
+                            )}
+                          </p>
+                        ) : (
+                          <p className="truncate text-xs text-slate-400 dark:text-zinc-500">{rest.join(',').trim() || 'Malaysia'}</p>
+                        )}
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => removeLocation(i)}
+                        className="rounded-lg p-1.5 text-slate-300 transition-colors hover:bg-red-50 hover:text-red-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/50 dark:text-zinc-600 dark:hover:bg-red-500/15 dark:hover:text-red-400"
+                        aria-label={`Remove ${getLocationLabel(loc.name)}`}
+                        title="Remove"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    </motion.li>
+                  )
+                })}
+              </AnimatePresence>
+            </ul>
+
+            <div className="flex items-center justify-between">
+              {locations.length < 2 ? (
+                <p className="text-xs text-slate-500 dark:text-zinc-400">Add one more place to find the midpoint.</p>
+              ) : <span />}
               <button
                 type="button"
-                onClick={() => setIsSidebarCollapsed((collapsed) => !collapsed)}
-                className={toggleBtnClass}
-                title={isSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+                onClick={() => updateLocations([])}
+                className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-medium text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 dark:text-zinc-500 dark:hover:bg-white/5 dark:hover:text-zinc-200"
               >
-                {isSidebarCollapsed ? <PanelLeftOpen className="w-4 h-4" /> : <PanelLeftClose className="w-4 h-4" />}
+                <Trash2 className="h-3.5 w-3.5" />
+                Clear all
               </button>
+            </div>
+          </>
+        ) : (
+          <div className="rounded-2xl border border-dashed border-slate-200 p-4 dark:border-white/10">
+            <ol className="space-y-3">
+              {[
+                ['Add where everyone is coming from', 'Search 2 to 10 towns, cities or landmarks.'],
+                ['Pick a midpoint style', 'Straight-line centre or fair road travel time.'],
+                ['Lepak!', 'We suggest nearby areas to meet up.']
+              ].map(([title, description], index) => (
+                <li key={title} className="flex gap-3">
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-blue-50 text-[11px] font-bold text-blue-600 dark:bg-blue-400/10 dark:text-blue-300">
+                    {index + 1}
+                  </span>
+                  <div>
+                    <p className="text-sm font-medium text-slate-700 dark:text-zinc-200">{title}</p>
+                    <p className="text-xs text-slate-400 dark:text-zinc-500">{description}</p>
+                  </div>
+                </li>
+              ))}
+            </ol>
+            <button
+              type="button"
+              onClick={loadExample}
+              className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white py-2.5 text-xs font-semibold text-slate-600 transition-colors hover:border-blue-300 hover:text-blue-600 dark:border-white/10 dark:bg-white/5 dark:text-zinc-300 dark:hover:border-blue-400/40 dark:hover:text-blue-300"
+            >
+              <Sparkles className="h-3.5 w-3.5" />
+              Try an example (Bangi, Cyberjaya, Shah Alam)
+            </button>
+          </div>
+        )}
+      </section>
 
-              <div className={`h-px w-10 ${railDivider}`} />
-
-              <div className={railBadge} title="Saved locations">
-                <Users className="w-4 h-4" />
-              </div>
-
-              <div className={railBadge} title={`${locations.length} locations`}>
-                <span className="text-xs font-semibold">{locations.length}</span>
-              </div>
-
+      {/* Step 2 — midpoint mode */}
+      <section className="flex flex-col gap-3">
+        <h2 className={sectionLabel}>How should we find the middle?</h2>
+        <div role="radiogroup" aria-label="Midpoint mode" className="grid grid-cols-2 gap-2">
+          {([
+            ['geographic', Globe2, 'Geographic', 'Straight-line centre'],
+            ['routing', RouteIcon, 'Road-based', 'Fair travel time']
+          ] as const).map(([mode, Icon, label, hint]) => {
+            const isActive = midpointMode === mode
+            return (
               <button
+                key={mode}
                 type="button"
-                onClick={() => setIsMcpGuideOpen(true)}
-                className={`${railBadge} transition-colors ${isDark ? 'hover:border-blue-400/40 hover:text-blue-300' : 'hover:border-blue-300 hover:text-blue-600'}`}
-                title="Connect with WebMCP"
-                aria-label="Open WebMCP integration guide"
+                role="radio"
+                aria-checked={isActive}
+                onClick={() => selectMidpointMode(mode)}
+                className={`flex flex-col items-start gap-1.5 rounded-2xl border p-3 text-left transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50 ${isActive
+                  ? 'border-blue-500 bg-blue-50 ring-1 ring-blue-500 dark:border-blue-400/70 dark:bg-blue-500/10 dark:ring-blue-400/70'
+                  : 'border-slate-200 bg-white hover:border-slate-300 dark:border-white/10 dark:bg-white/[0.03] dark:hover:border-white/20'
+                  }`}
               >
-                <Bot className="w-4 h-4" />
+                <Icon className={`h-4 w-4 ${isActive ? 'text-blue-600 dark:text-blue-300' : 'text-slate-400 dark:text-zinc-500'}`} />
+                <span className={`text-sm font-semibold ${isActive ? 'text-blue-700 dark:text-blue-200' : 'text-slate-700 dark:text-zinc-200'}`}>{label}</span>
+                <span className="text-[11px] text-slate-500 dark:text-zinc-400">{hint}</span>
               </button>
+            )
+          })}
+        </div>
+      </section>
 
-              {midpoint && (
-                <div className={railBadge} title={`${midpointModeLabel} available`}>
-                  <MapPin className="w-4 h-4 text-amber-400" />
-                </div>
-              )}
+      {/* Step 3 — result */}
+      <AnimatePresence>
+        {midpoint && (
+          <motion.section
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 8 }}
+            className="relative overflow-hidden rounded-3xl border border-amber-300/60 bg-gradient-to-br from-amber-50 via-white to-blue-50 p-4 dark:border-amber-400/25 dark:from-amber-500/15 dark:via-zinc-900/40 dark:to-blue-600/15"
+            aria-live="polite"
+          >
+            <div className="flex items-start gap-3">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-amber-500 text-white shadow-lg shadow-amber-500/30">
+                <MapPin className="h-5 w-5" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-amber-600 dark:text-amber-400">{midpointModeLabel}</p>
+                <h3 className="mt-0.5 text-lg font-bold leading-tight text-slate-900 dark:text-white">Lepak sini jom</h3>
+                {isFetchingNearby ? (
+                  <div className="mt-1.5 h-4 w-32 animate-pulse rounded bg-slate-200/80 dark:bg-white/10" />
+                ) : primaryNearbyPlace ? (
+                  <p className="mt-0.5 truncate text-sm font-medium text-slate-600 dark:text-zinc-300">Near {primaryNearbyPlace}</p>
+                ) : null}
+              </div>
+            </div>
+
+            <p className="mt-3 text-xs leading-5 text-slate-600 dark:text-zinc-300">{midpointDescription}</p>
+
+            {midpointMode === 'routing' && (isRoutingMidpointLoading || routingMidpointError) && (
+              <div className={`mt-3 flex items-start gap-2 rounded-xl border px-3 py-2 text-xs ${isRoutingMidpointLoading
+                ? 'border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-400/20 dark:bg-blue-400/10 dark:text-blue-200'
+                : 'border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-400/25 dark:bg-amber-400/10 dark:text-amber-200'
+                }`}>
+                {isRoutingMidpointLoading ? (
+                  <>
+                    <Loader2 className="mt-0.5 h-3.5 w-3.5 shrink-0 animate-spin" />
+                    Calculating road-based midpoint...
+                  </>
+                ) : (
+                  <>
+                    <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                    {routingMidpointError}
+                  </>
+                )}
+              </div>
+            )}
+
+            {showRoutingMetrics && routingMetrics && (
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                {([
+                  ['Longest journey', formatDuration(routingMetrics.maximumDurationSec)],
+                  ['Time spread', formatDuration(routingMetrics.durationSpreadSec)],
+                  ['Total travel time', formatDuration(routingMetrics.totalDurationSec)],
+                  ['Total road distance', formatDistance(routingMetrics.totalDistanceKm)]
+                ] as const).map(([label, value]) => (
+                  <div key={label} className={statBox}>
+                    <p className="text-[10px] font-medium uppercase tracking-[0.12em] text-slate-400 dark:text-zinc-500">{label}</p>
+                    <p className="mt-1 text-base font-bold tabular-nums text-slate-900 dark:text-white">{value}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <a
+                href={`https://www.google.com/maps/search/?api=1&query=${midpoint.lat},${midpoint.lng}`}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-slate-900 py-2.5 text-xs font-semibold text-white transition-colors hover:bg-slate-700 dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-200"
+              >
+                <ExternalLink className="h-3.5 w-3.5" />
+                Google Maps
+              </a>
+              <a
+                href={`https://waze.com/ul?ll=${midpoint.lat},${midpoint.lng}&navigate=yes`}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white py-2.5 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-50 dark:border-white/10 dark:bg-white/5 dark:text-zinc-100 dark:hover:bg-white/10"
+              >
+                <Navigation className="h-3.5 w-3.5" />
+                Waze
+              </a>
             </div>
 
             <button
               type="button"
-              onClick={() => setIsDark((d) => !d)}
-              className={toggleBtnClass}
-              title={isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+              onClick={() => copyCoordinates(midpoint)}
+              className="mt-2 flex w-full items-center justify-between gap-2 rounded-xl border border-slate-200/80 bg-white/60 px-3 py-2 font-mono text-[11px] text-slate-600 transition-colors hover:bg-white dark:border-white/10 dark:bg-black/25 dark:text-zinc-300 dark:hover:bg-black/40"
+              title="Copy coordinates"
             >
-              {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+              <span className="tabular-nums">{midpoint.lat.toFixed(4)}, {midpoint.lng.toFixed(4)}</span>
+              <span className="inline-flex items-center gap-1 font-sans font-semibold text-slate-500 dark:text-zinc-400">
+                {hasCopied ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5" />}
+                {hasCopied ? 'Copied' : 'Copy'}
+              </span>
             </button>
-          </div>
 
-          <motion.div
-            animate={{ width: isSidebarCollapsed ? 0 : 288, opacity: isSidebarCollapsed ? 0 : 1 }}
-            transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
-            className="h-full overflow-hidden"
-          >
-            <div className="flex h-full w-72 flex-col gap-5 overflow-y-auto custom-scrollbar p-6">
-              {sidebarContent}
+            <div className="mt-4">
+              <p className={`${sectionLabel} mb-2`}>Suggested areas nearby</p>
+              {isFetchingNearby ? (
+                <div className="flex flex-wrap gap-2">
+                  {[80, 104, 64].map((width) => (
+                    <div key={width} className="h-7 animate-pulse rounded-full bg-slate-200/80 dark:bg-white/10" style={{ width }} />
+                  ))}
+                </div>
+              ) : nearbyPlaces.length > 0 ? (
+                <div className="flex flex-wrap gap-2">
+                  {nearbyPlaces.map((place, i) => (
+                    <motion.span
+                      key={`${place.name}-${i}`}
+                      initial={{ opacity: 0, scale: 0.9 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      transition={{ delay: i * 0.06 }}
+                      className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 dark:border-white/10 dark:bg-white/[0.06] dark:text-zinc-200"
+                      title={`~${place.distanceKm.toFixed(1)} km from midpoint`}
+                    >
+                      <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400" />
+                      {place.name}
+                      <span className="text-[10px] text-slate-400 dark:text-zinc-500">{place.distanceKm.toFixed(1)} km</span>
+                    </motion.span>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-slate-400 dark:text-zinc-500">No suggestions found.</p>
+              )}
             </div>
-          </motion.div>
-        </div>
-      </motion.div>
 
+            {routingSearch?.strategy === 'multi-ring-refinement' && (
+              <p className="mt-4 border-t border-slate-200/70 pt-3 text-[11px] text-slate-400 dark:border-white/10 dark:text-zinc-500">
+                Multi-ring search: {routingSearch.stage1CandidateCount} broad + {routingSearch.stage2CandidateCount} refined candidates
+                {!routingSearch.stage2Completed ? ' (broad winner retained)' : ''}
+              </p>
+            )}
+          </motion.section>
+        )}
+      </AnimatePresence>
+
+      <p className="pb-1 text-center text-[11px] text-slate-400 dark:text-zinc-600">Built for fair Malaysian meetups</p>
+    </div>
+  )
+
+  return (
+    <main className={`relative h-dvh w-screen overflow-hidden ${isDark ? 'dark bg-zinc-950' : 'bg-slate-100'}`}>
       <div className="absolute inset-0 z-0 h-full w-full">
         <Map
           key={isDark ? 'map-dark' : 'map-light'}
@@ -912,9 +943,85 @@ export default function Home() {
           midpointMode={midpointMode}
           routePaths={routePaths}
           isDark={isDark}
+          isPanelOpen={isPanelOpen}
         />
-        <div className={floatingCreditClass}>Built for fair Malaysian meetups</div>
       </div>
+
+      {/* Collapsed launcher (desktop) */}
+      <AnimatePresence>
+        {!isPanelOpen && (
+          <motion.button
+            type="button"
+            initial={{ opacity: 0, x: -12 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -12 }}
+            transition={{ duration: 0.2 }}
+            onClick={() => setIsSidebarCollapsed(false)}
+            className="absolute left-4 top-4 z-20 hidden items-center gap-3 rounded-2xl border border-slate-200 bg-white/90 p-2 pr-4 text-left shadow-xl backdrop-blur-xl transition-colors hover:bg-white md:flex dark:border-white/10 dark:bg-zinc-900/85 dark:hover:bg-zinc-900"
+            aria-label="Open planner panel"
+          >
+            {brandMark}
+            <span>
+              <span className="block text-sm font-bold text-slate-900 dark:text-white">Mana nak lepak ni?</span>
+              <span className="block text-xs text-slate-500 dark:text-zinc-400">{panelSummary}</span>
+            </span>
+            <PanelLeftOpen className="ml-2 h-4 w-4 text-slate-400 dark:text-zinc-500" />
+          </motion.button>
+        )}
+      </AnimatePresence>
+
+      {/* Planner panel: bottom sheet on phones, floating card on desktop */}
+      <aside
+        aria-label="Meetup planner"
+        className={`absolute z-20 flex flex-col overflow-hidden border-slate-200/80 bg-white/95 shadow-[0_-8px_40px_rgba(15,23,42,0.18)] backdrop-blur-xl transition-[transform,opacity] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] dark:border-white/10 dark:bg-zinc-900/90 dark:shadow-[0_-8px_40px_rgba(0,0,0,0.5)]
+          inset-x-0 bottom-0 max-h-[62dvh] rounded-t-3xl border-t
+          md:inset-x-auto md:bottom-4 md:left-4 md:top-4 md:max-h-none md:w-[392px] md:rounded-3xl md:border md:shadow-2xl
+          ${isPanelOpen
+            ? 'translate-y-0 md:translate-x-0 md:opacity-100'
+            : 'translate-y-[calc(100%-4.75rem)] md:translate-y-0 md:-translate-x-[calc(100%+2rem)] md:opacity-0 md:pointer-events-none'}`}
+      >
+        <header className="shrink-0 border-b border-slate-200/70 px-4 pb-3 pt-2 md:px-5 md:pt-5 dark:border-white/[0.07]">
+          <button
+            type="button"
+            onClick={() => setIsSidebarCollapsed((collapsed) => !collapsed)}
+            className="mx-auto mb-2 block h-1.5 w-10 rounded-full bg-slate-300 md:hidden dark:bg-zinc-700"
+            aria-label={isPanelOpen ? 'Collapse planner' : 'Expand planner'}
+          />
+          <div className="flex items-center gap-3">
+            {brandMark}
+            <button
+              type="button"
+              onClick={() => setIsSidebarCollapsed((collapsed) => !collapsed)}
+              className="min-w-0 flex-1 text-left md:pointer-events-none"
+              tabIndex={-1}
+            >
+              <h1 className="truncate text-base font-bold tracking-tight text-slate-900 dark:text-white">Mana nak lepak ni?</h1>
+              <p className="truncate text-xs text-slate-500 dark:text-zinc-400">
+                <span className="md:hidden">{panelSummary}</span>
+                <span className="hidden md:inline">Fair meetup spots for everyone</span>
+              </p>
+            </button>
+            <div className="flex shrink-0 items-center gap-1.5">
+            {agentButton}
+            {themeToggle}
+            <button
+              type="button"
+              onClick={() => setIsSidebarCollapsed((collapsed) => !collapsed)}
+              className={iconButton}
+              title={isPanelOpen ? 'Collapse panel' : 'Expand panel'}
+              aria-label={isPanelOpen ? 'Collapse planner' : 'Expand planner'}
+            >
+              <span className="md:hidden">{isPanelOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}</span>
+              <PanelLeftClose className="hidden h-4 w-4 md:block" />
+            </button>
+            </div>
+          </div>
+        </header>
+
+        <div className={`min-h-0 flex-1 overflow-y-auto custom-scrollbar px-4 py-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] md:px-5 ${isPanelOpen ? '' : 'max-md:invisible'}`}>
+          {panelBody}
+        </div>
+      </aside>
 
       <AnimatePresence>
         {isMcpGuideOpen && (
@@ -922,7 +1029,7 @@ export default function Home() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/65 p-4 backdrop-blur-sm"
+            className="fixed inset-0 z-[1000] flex items-end justify-center bg-slate-950/60 p-0 backdrop-blur-sm sm:items-center sm:p-4"
             onMouseDown={(event) => {
               if (event.target === event.currentTarget) setIsMcpGuideOpen(false)
             }}
@@ -931,29 +1038,26 @@ export default function Home() {
               role="dialog"
               aria-modal="true"
               aria-labelledby="webmcp-guide-title"
-              initial={{ opacity: 0, y: 18, scale: 0.98 }}
+              initial={{ opacity: 0, y: 24, scale: 0.98 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 12, scale: 0.98 }}
+              exit={{ opacity: 0, y: 16, scale: 0.98 }}
               transition={{ duration: 0.2 }}
-              className={`max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-3xl border shadow-2xl ${isDark
-                ? 'border-white/10 bg-zinc-950 text-zinc-100'
-                : 'border-slate-200 bg-white text-slate-900'
-                }`}
+              className="max-h-[90dvh] w-full max-w-lg overflow-y-auto custom-scrollbar rounded-t-3xl border border-slate-200 bg-white text-slate-900 shadow-2xl sm:rounded-3xl dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-100"
             >
-              <div className={`sticky top-0 z-10 flex items-start justify-between gap-4 border-b p-5 backdrop-blur-xl ${isDark ? 'border-white/10 bg-zinc-950/90' : 'border-slate-200 bg-white/90'}`}>
+              <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-slate-200 bg-white/90 p-5 backdrop-blur-xl dark:border-white/10 dark:bg-zinc-900/90">
                 <div className="flex items-start gap-3">
-                  <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl ${isDark ? 'bg-blue-400/15 text-blue-300' : 'bg-blue-50 text-blue-600'}`}>
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-blue-50 text-blue-600 dark:bg-blue-400/15 dark:text-blue-300">
                     <Bot className="h-5 w-5" />
                   </span>
                   <div>
-                    <p className={`text-[10px] font-bold uppercase tracking-[0.2em] ${isDark ? 'text-blue-300' : 'text-blue-600'}`}>Site tools</p>
+                    <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-blue-600 dark:text-blue-300">Site tools</p>
                     <h2 id="webmcp-guide-title" className="mt-1 text-xl font-bold">Use Mana Nak Lepak Ni with ChatGPT</h2>
                   </div>
                 </div>
                 <button
                   type="button"
                   onClick={() => setIsMcpGuideOpen(false)}
-                  className={`rounded-xl p-2 transition-colors ${isDark ? 'text-zinc-400 hover:bg-white/10 hover:text-white' : 'text-slate-400 hover:bg-slate-100 hover:text-slate-700'}`}
+                  className="rounded-xl p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 dark:text-zinc-400 dark:hover:bg-white/10 dark:hover:text-white"
                   aria-label="Close WebMCP integration guide"
                 >
                   <X className="h-5 w-5" />
@@ -962,15 +1066,15 @@ export default function Home() {
 
               <div className="space-y-5 p-5">
                 <div className={`flex items-start gap-3 rounded-2xl border p-4 ${isWebMcpReady
-                  ? isDark ? 'border-emerald-400/25 bg-emerald-400/10' : 'border-emerald-200 bg-emerald-50'
-                  : isDark ? 'border-amber-400/25 bg-amber-400/10' : 'border-amber-200 bg-amber-50'
+                  ? 'border-emerald-200 bg-emerald-50 dark:border-emerald-400/25 dark:bg-emerald-400/10'
+                  : 'border-amber-200 bg-amber-50 dark:border-amber-400/25 dark:bg-amber-400/10'
                   }`}>
-                  <CheckCircle2 className={`mt-0.5 h-5 w-5 shrink-0 ${isWebMcpReady ? 'text-emerald-400' : 'text-amber-400'}`} />
+                  <CheckCircle2 className={`mt-0.5 h-5 w-5 shrink-0 ${isWebMcpReady ? 'text-emerald-500' : 'text-amber-500'}`} />
                   <div>
                     <p className="text-sm font-semibold">
                       {isWebMcpReady ? 'Connected — 5 tools available' : 'Site tools not detected in this browser'}
                     </p>
-                    <p className={`mt-1 text-xs leading-5 ${subtitleText}`}>
+                    <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-zinc-400">
                       {isWebMcpReady
                         ? 'ChatGPT can discover the planner actions exposed by this page.'
                         : 'The app still works normally. Follow the steps below in ChatGPT’s built-in browser to use the agent integration.'}
@@ -988,26 +1092,26 @@ export default function Home() {
                       ['Ask ChatGPT to plan', 'Describe everyone’s starting locations and ask it to compare the geographic and road-based midpoint before applying your choice.']
                     ].map(([title, description], index) => (
                       <li key={title} className="flex gap-3">
-                        <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold ${isDark ? 'bg-white/10 text-zinc-200' : 'bg-slate-100 text-slate-700'}`}>
+                        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-bold text-slate-700 dark:bg-white/10 dark:text-zinc-200">
                           {index + 1}
                         </span>
                         <div>
                           <p className="text-sm font-medium">{title}</p>
-                          <p className={`mt-0.5 text-xs leading-5 ${subtitleText}`}>{description}</p>
+                          <p className="mt-0.5 text-xs leading-5 text-slate-500 dark:text-zinc-400">{description}</p>
                         </div>
                       </li>
                     ))}
                   </ol>
                 </div>
 
-                <div className={`rounded-2xl border p-4 ${isDark ? 'border-white/10 bg-black/30' : 'border-slate-200 bg-slate-50'}`}>
-                  <p className={`text-[10px] font-bold uppercase tracking-[0.18em] ${subtitleText}`}>Try this prompt</p>
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-black/30">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500 dark:text-zinc-400">Try this prompt</p>
                   <p className="mt-2 text-sm leading-6">
                     “Plan a fair meetup for friends coming from Bangi, Cyberjaya, and Shah Alam. Compare both midpoint modes, explain the longest journey, then ask me before applying the plan.”
                   </p>
                 </div>
 
-                <p className={`text-xs leading-5 ${subtitleText}`}>
+                <p className="text-xs leading-5 text-slate-500 dark:text-zinc-400">
                   No separate MCP server or API-key setup is required. These tools belong to the live page and share the same visible map state with you.
                 </p>
 
@@ -1015,7 +1119,7 @@ export default function Home() {
                   href="https://learn.chatgpt.com/docs/webmcp"
                   target="_blank"
                   rel="noreferrer"
-                  className={`inline-flex items-center gap-2 text-xs font-semibold ${isDark ? 'text-blue-300 hover:text-blue-200' : 'text-blue-600 hover:text-blue-700'}`}
+                  className="inline-flex items-center gap-2 text-xs font-semibold text-blue-600 hover:text-blue-700 dark:text-blue-300 dark:hover:text-blue-200"
                 >
                   Read the official Site tools guide
                   <ExternalLink className="h-3.5 w-3.5" />
